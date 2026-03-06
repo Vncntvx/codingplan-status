@@ -19,12 +19,13 @@ function activate(context) {
     const BILLING_CACHE_DURATION = 30000; // 30 seconds cache for billing data
 
     const updateStatus = async () => {
+      let language = "zh-CN";
       try {
         // Refresh API config to get latest settings
         api.refreshConfig();
         const config = vscode.workspace.getConfiguration("minimaxStatus");
         const overseasDisplay = config.get("overseasDisplay") || "none";
-        const language = config.get("language") || "zh-CN";
+        language = config.get("language") || "zh-CN";
 
         // Get domestic data
         const [apiData, subscriptionData] = await Promise.all([
