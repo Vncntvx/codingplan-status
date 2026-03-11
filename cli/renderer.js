@@ -86,8 +86,16 @@ class Renderer {
       const isMainBranch = name === 'main' || name === 'master';
       const branchColor = isMainBranch ? chalk.green : chalk.white;
 
+      // 分支名截断处理：超过20字符时截断并省略中间部分
+      let displayBranchName = name;
+      if (name.length > 20) {
+        const prefixLength = 10;
+        const suffixLength = 7;
+        displayBranchName = name.substring(0, prefixLength) + '…' + name.substring(name.length - suffixLength);
+      }
+
       // 构建分支显示字符串
-      let branchStr = branchColor(name);
+      let branchStr = branchColor(displayBranchName);
 
       // 未提交更改用 * 标记
       if (hasChanges) {
