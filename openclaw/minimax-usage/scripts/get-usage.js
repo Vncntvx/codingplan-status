@@ -163,6 +163,14 @@ class MinimaxAPI {
     const hours = Math.floor(remainingMs / (1000 * 60 * 60));
     const minutes = Math.floor((remainingMs % (1000 * 60 * 60)) / (1000 * 60));
 
+    // 周用量
+    const weeklyUsed = modelData.current_weekly_total_count - modelData.current_weekly_usage_count;
+    const weeklyTotal = modelData.current_weekly_total_count;
+    const weeklyPercentage = Math.floor((weeklyUsed / weeklyTotal) * 100);
+    const weeklyRemainingMs = modelData.weekly_remains_time;
+    const weeklyDays = Math.floor(weeklyRemainingMs / (1000 * 60 * 60 * 24));
+    const weeklyHours = Math.floor((weeklyRemainingMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+
     let expiryInfo = null;
     if (subscriptionData?.current_subscribe?.current_subscribe_end_time) {
       const expiryDate = subscriptionData.current_subscribe.current_subscribe_end_time;
@@ -185,6 +193,14 @@ class MinimaxAPI {
       },
       remaining: { hours, minutes, text: hours > 0 ? `${hours} 小时 ${minutes} 分钟后重置` : `${minutes} 分钟后重置` },
       usage: { used: usedCount, remaining: remainingCount, total: modelData.current_interval_total_count, percentage: usedPercentage },
+      weekly: {
+        used: weeklyUsed,
+        total: weeklyTotal,
+        percentage: weeklyPercentage,
+        days: weeklyDays,
+        hours: weeklyHours,
+        text: weeklyDays > 0 ? `${weeklyDays} 天 ${weeklyHours} 小时后重置` : `${weeklyHours} 小时后重置`
+      },
       contextWindow: { total: 200000, used: 0, percentage: 0, totalFormatted: "200K", usedFormatted: "0K" },
       expiry: expiryInfo
     };
@@ -250,6 +266,7 @@ async function main() {
       timeWindow: usageData.timeWindow,
       remaining: usageData.remaining,
       usage: usageData.usage,
+      weekly: usageData.weekly,
       contextWindow: usageData.contextWindow,
       expiry: usageData.expiry,
       stats: usageStats ? {
