@@ -1,6 +1,6 @@
 # MiniMax Status
 
-在 VS Code 状态栏实时显示 MiniMax Coding Plan 使用状态。
+在 VS Code 状态栏实时显示 MiniMax Token-Plan 使用状态。
 
 [![VS Code Extension](https://img.shields.io/badge/VS%20Code-Extension-blue?style=flat-square)](https://marketplace.visualstudio.com/items?itemName=JochenYang.minimax-status-vscode)
 [![Version](https://img.shields.io/badge/version-1.2.5-green?style=flat-square)](https://marketplace.visualstudio.com/items?itemName=JochenYang.minimax-status-vscode)
@@ -31,14 +31,13 @@
 
 1. 点击左侧边栏的 MiniMax 图标
 2. 点击「插件设置」
-3. 填写 **Group ID** 和 **API Key**
+3. 填写 **API Key**
 
 ### 3. 获取认证信息
 
 | 信息 | 获取位置 |
 |------|----------|
-| Group ID | 账户信息 / Your Profile |
-| API Key | 套餐管理 → Coding Plan / Subscribe → Coding Plan |
+| API Key | 套餐管理 → Token-Plan / Subscribe → Token-Plan |
 
 ### 4. 查看状态
 
@@ -128,7 +127,7 @@ Click to refresh
 **Q: 状态栏不显示？**
 
 请检查：
-- 是否已正确配置 Group ID 和 API Key
+- 是否已正确配置 API Key
 - 扩展是否已激活（重启 VS Code）
 - 网络连接是否正常
 

@@ -130,9 +130,9 @@ function activate(context) {
         };
 
         // 按自然月统计当月消耗
-        const now = new Date();
-        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0).getTime();
-        const monthEnd = now.getTime();
+        const nowDate = new Date();
+        const monthStart = new Date(nowDate.getFullYear(), nowDate.getMonth(), 1, 0, 0, 0, 0).getTime();
+        const monthEnd = nowDate.getTime();
 
         if (billingCache && billingCache.length > 0) {
           usageStats = api.calculateUsageStats(billingCache, monthStart, monthEnd);
@@ -217,7 +217,7 @@ function activate(context) {
       setTimeout(() => {
         vscode.window
           .showInformationMessage(
-            "欢迎使用 MiniMax Status！\n\n需要配置您的访问令牌和group ID 才能开始使用。",
+            "欢迎使用 MiniMax Status！\n\n需要配置您的访问令牌才能开始使用。",
             "立即配置",
             "稍后设置"
           )
@@ -264,22 +264,18 @@ async function showHelpWebView(context) {
     "zh-CN": {
       title: "MiniMax Status 使用教程",
       step1Title: "第一步：获取 API Key",
-      step1Content: "国内版：账户信息\n海外版：Your Profile\n\n在页面中找到并复制 Group ID",
-      step2Title: "第二步：获取 API Key",
-      step2Content: "国内版：套餐管理 -> Coding Plan\n海外版：Subscribe -> Coding Plan\n\n点击「创建新的 API Key」",
-      step3Title: "第三步：配置插件",
-      step3Content: "1. 点击左侧边栏的 MiniMax 图标\n2. 点击「插件设置」按钮\n3. 填写 API Key 和 Group ID\n4. 点击保存",
+      step1Content: "国内版：套餐管理 -> Token-Plan\n海外版：Subscribe -> Token-Plan\n\n点击「创建新的 API Key」",
+      step2Title: "第二步：配置插件",
+      step2Content: "1. 点击左侧边栏的 MiniMax 图标\n2. 点击「插件设置」按钮\n3. 填写 API Key\n4. 点击保存",
       step4Title: "使用说明",
       step4Content: "• 状态栏显示当前使用进度\n• 点击状态栏可刷新数据\n• 支持国内/海外账号切换",
     },
     "en-US": {
       title: "MiniMax Status Help",
-      step1Title: "Step 1: Get Group ID",
-      step1Content: "Domestic: Your Profile\nOverseas: Your Profile\n\nFind and copy Group ID from the page",
-      step2Title: "Step 2: Get API Key",
-      step2Content: "Domestic: Subscription -> Coding Plan\nOverseas: Subscribe -> Coding Plan\n\nClick 'Create new API Key'",
-      step3Title: "Step 3: Configure Plugin",
-      step3Content: "1. Click MiniMax icon in sidebar\n2. Click「Settings」\n3. Enter API Key and Group ID\n4. Click Save",
+      step1Title: "Step 1: Get API Key",
+      step1Content: "Domestic: Subscription -> Token-Plan\nOverseas: Subscribe -> Token-Plan\n\nClick 'Create new API Key'",
+      step2Title: "Step 2: Configure Plugin",
+      step2Content: "1. Click MiniMax icon in sidebar\n2. Click Settings\n3. Enter API Key\n4. Click Save",
       step4Title: "Usage",
       step4Content: "• Status bar shows usage progress\n• Click status bar to refresh\n• Support domestic/overseas accounts",
     }
@@ -354,13 +350,8 @@ async function showHelpWebView(context) {
             </div>
 
             <div class="step">
-                <h2>${t.step3Title}</h2>
-                <p>${t.step3Content}</p>
-            </div>
-
-            <div class="step">
-                <h2>${t.step4Title}</h2>
-                <p>${t.step4Content}</p>
+                <h2>${t.step3Title || t.step4Title}</h2>
+                <p>${t.step3Content || t.step4Content}</p>
             </div>
         </div>
     </body>
