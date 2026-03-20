@@ -410,13 +410,11 @@ async function showSettingsWebView(context, api, updateStatus) {
   // Get current configuration
   const config = vscode.workspace.getConfiguration("minimaxStatus");
   const currentToken = config.get("token") || "";
-  const currentGroupId = config.get("groupId") || "";
   const currentInterval = config.get("refreshInterval") || 30;
   const currentShowTooltip = config.get("showTooltip") ?? true;
   const currentModelName = config.get("modelName") || "";
   const currentOverseasDisplay = config.get("overseasDisplay") || "none";
   const currentOverseasToken = config.get("overseasToken") || "";
-  const currentOverseasGroupId = config.get("overseasGroupId") || "";
   const currentLanguage = config.get("language") || "zh-CN";
 
   // Language translations
@@ -428,11 +426,9 @@ async function showSettingsWebView(context, api, updateStatus) {
       apiKey: "API Key",
       apiKeyPlaceholder: "请输入国内 API Key",
       apiKeyInfo: "platform.minimaxi.com 的 API Key",
-      groupId: "GroupID（可选）",
-      groupIdPlaceholder: "已废弃，可不填",
-      groupIdInfo: "国内账号的 GroupID（已废弃）",
       overseasApiKeyPlaceholder: "请输入海外 API Key",
       overseasApiKeyInfo: "platform.minimax.io 的 API Key（用于显示海外用量）",
+      overseasGroupId: "GroupID",
       overseasGroupIdPlaceholder: "请输入 groupID",
       overseasGroupIdInfo: "海外账号的 GroupID",
       displayTitle: "显示设置",
@@ -450,7 +446,6 @@ async function showSettingsWebView(context, api, updateStatus) {
       cancel: "取消",
       apiKeyError: "请输入 API Key",
       overseasApiKeyError: "请输入海外 API Key",
-      overseasGroupIdError: "请输入海外 groupID",
       invalidInterval: "刷新间隔必须在 5-300 秒之间",
       modelAuto: "自动选择第一个模型",
       modelEmpty: "请先配置 API Key",
@@ -462,13 +457,8 @@ async function showSettingsWebView(context, api, updateStatus) {
       apiKey: "API Key",
       apiKeyPlaceholder: "Enter domestic API Key",
       apiKeyInfo: "platform.minimaxi.com API Key",
-      groupId: "GroupID (Optional)",
-      groupIdPlaceholder: "Deprecated, can be left empty",
-      groupIdInfo: "Domestic account GroupID (Deprecated)",
       overseasApiKeyPlaceholder: "Enter overseas API Key",
       overseasApiKeyInfo: "platform.minimax.io API Key (for overseas usage)",
-      overseasGroupIdPlaceholder: "Enter groupID",
-      overseasGroupIdInfo: "Overseas account GroupID",
       displayTitle: "Display Settings",
       refreshInterval: "Refresh Interval (seconds)",
       refreshIntervalInfo: "Auto-refresh interval, 10-30 seconds recommended",
@@ -654,12 +644,6 @@ async function showSettingsWebView(context, api, updateStatus) {
                     <div class="info-text">${t.apiKeyInfo}</div>
                     <div class="error" id="token-error"></div>
                 </div>
-                <div class="form-group">
-                    <label for="groupId">${t.groupId}</label>
-                    <input type="text" id="groupId" placeholder="${t.groupIdPlaceholder}" value="${currentGroupId}">
-                    <div class="info-text">${t.groupIdInfo}</div>
-                    <div class="error" id="groupId-error"></div>
-                </div>
             </div>
 
             <!-- 海外账号卡片 -->
@@ -670,12 +654,6 @@ async function showSettingsWebView(context, api, updateStatus) {
                     <input type="text" id="overseasToken" placeholder="${t.overseasApiKeyPlaceholder}" value="${currentOverseasToken}">
                     <div class="info-text">${t.overseasApiKeyInfo}</div>
                     <div class="error" id="overseasToken-error"></div>
-                </div>
-                <div class="form-group">
-                    <label for="overseasGroupId">${t.groupId}</label>
-                    <input type="text" id="overseasGroupId" placeholder="${t.overseasGroupIdPlaceholder}" value="${currentOverseasGroupId}">
-                    <div class="info-text">${t.overseasGroupIdInfo}</div>
-                    <div class="error" id="overseasGroupId-error"></div>
                 </div>
             </div>
 
@@ -735,9 +713,7 @@ async function showSettingsWebView(context, api, updateStatus) {
 
             document.getElementById('saveBtn').addEventListener('click', () => {
                 const token = document.getElementById('token').value.trim();
-                const groupId = document.getElementById('groupId').value.trim();
                 const overseasToken = document.getElementById('overseasToken').value.trim();
-                const overseasGroupId = document.getElementById('overseasGroupId').value.trim();
                 const interval = parseInt(document.getElementById('interval').value, 10);
                 const showTooltip = document.getElementById('showTooltip').checked;
                 const modelName = document.getElementById('modelName').value;
@@ -746,9 +722,7 @@ async function showSettingsWebView(context, api, updateStatus) {
 
                 // Clear previous errors
                 document.getElementById('token-error').textContent = '';
-                document.getElementById('groupId-error').textContent = '';
                 document.getElementById('overseasToken-error').textContent = '';
-                document.getElementById('overseasGroupId-error').textContent = '';
 
                 // Validate inputs
                 let hasError = false;
@@ -762,10 +736,6 @@ async function showSettingsWebView(context, api, updateStatus) {
                 if (overseasDisplay === 'overseas' || overseasDisplay === 'both') {
                     if (!overseasToken) {
                         document.getElementById('overseasToken-error').textContent = t.overseasApiKeyError;
-                        hasError = true;
-                    }
-                    if (!overseasGroupId) {
-                        document.getElementById('overseasGroupId-error').textContent = t.overseasGroupIdError;
                         hasError = true;
                     }
                 }
@@ -783,9 +753,7 @@ async function showSettingsWebView(context, api, updateStatus) {
                 vscode.postMessage({
                     command: 'saveSettings',
                     token: token,
-                    groupId: groupId,
                     overseasToken: overseasToken,
-                    overseasGroupId: overseasGroupId,
                     interval: interval,
                     showTooltip: showTooltip,
                     modelName: modelName,
@@ -826,11 +794,6 @@ async function showSettingsWebView(context, api, updateStatus) {
             vscode.ConfigurationTarget.Global
           );
           config.update(
-            "groupId",
-            message.groupId,
-            vscode.ConfigurationTarget.Global
-          );
-          config.update(
             "refreshInterval",
             message.interval,
             vscode.ConfigurationTarget.Global
@@ -858,13 +821,6 @@ async function showSettingsWebView(context, api, updateStatus) {
             config.update(
               "overseasToken",
               message.overseasToken,
-              vscode.ConfigurationTarget.Global
-            );
-          }
-          if (message.overseasGroupId !== undefined) {
-            config.update(
-              "overseasGroupId",
-              message.overseasGroupId,
               vscode.ConfigurationTarget.Global
             );
           }
