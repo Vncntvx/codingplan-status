@@ -1,5 +1,10 @@
 # MiniMax StatusBar
 
+[![npm version](https://img.shields.io/npm/v/minimax-status.svg)](https://www.npmjs.com/package/minimax-status)
+[![npm downloads](https://img.shields.io/npm/dm/minimax-status.svg)](https://www.npmjs.com/package/minimax-status)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![VSCode Extension](https://img.shields.io/badge/VSCode-MiniMax-blue?style=flat-square)](https://marketplace.visualstudio.com/items?itemName=JochenYang.minimax-status-vscode)
+
 MiniMax coding-plan 使用状态监控工具，支持 CLI 命令和 Claude Code 状态栏集成。
 
 ## 版本
