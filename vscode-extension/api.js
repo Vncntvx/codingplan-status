@@ -258,6 +258,108 @@ class MinimaxAPI {
     return allRecords;
   }
 
+  /**
+   * Parse all models for tooltip display
+   * @param {Object} apiData - Raw API response data
+   * @returns {Object} Parsed data for all supported models
+   */
+  parseAllModelsForTooltip(apiData) {
+    if (!apiData.model_remains || apiData.model_remains.length === 0) {
+      return { models: [], textModel: null, otherModels: [], ttsModel: null };
+    }
+
+    // Parse all models and filter unsupported ones
+    const allModels = apiData.model_remains
+      .filter(m => {
+        // Filter out unsupported models: both total counts are 0
+        const totalCount = m.current_interval_total_count || 0;
+        const weeklyTotal = m.current_weekly_total_count || 0;
+        return !(totalCount === 0 && weeklyTotal === 0);
+      })
+      .map(m => {
+        const totalCount = m.current_interval_total_count;
+        // usage_count 实际上是剩余次数，不是已使用
+        const remainingCount = m.current_interval_usage_count;
+        // percentage = 剩余 / 总量
+        const percentage = totalCount > 0 ? Math.round((remainingCount / totalCount) * 100) : 0;
+
+        // Calculate remaining time
+        const remainingMs = m.remains_time || 0;
+        const hours = Math.floor(remainingMs / (1000 * 60 * 60));
+        const minutes = Math.floor((remainingMs % (1000 * 60 * 60)) / (1000 * 60));
+
+        // Weekly data - weekly_usage_count 也是剩余次数
+        const weeklyTotal = m.current_weekly_total_count || 0;
+        const weeklyRemainingCount = m.current_weekly_usage_count || 0;
+        const weeklyPercentage = weeklyTotal > 0 ? Math.round((weeklyRemainingCount / weeklyTotal) * 100) : 0;
+        const weeklyRemainingMs = m.weekly_remains_time || 0;
+        const weeklyDays = Math.floor(weeklyRemainingMs / (1000 * 60 * 60 * 24));
+        const weeklyHours = Math.floor((weeklyRemainingMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+
+        // Determine model type
+        const modelName = m.model_name || '';
+        const isTextModel = modelName.includes('MiniMax-M');
+        const isTTSModel = modelName.includes('speech');
+
+        // Status: remainingCount > 0 表示还有剩余，<= 0 表示已用完或超限
+        const isExhausted = remainingCount <= 0;
+        const isOverLimit = false; // 剩余次数不会超限
+        const weeklyUnlimited = weeklyTotal === 0;
+
+        // 小额度模型（日配额较小）：Hailuo、music、image
+        // 这些模型日配额用完后第二天重置，周限额不需要显示
+        const isSmallQuotaModel = modelName.includes('Hailuo') ||
+                                   modelName.includes('music') ||
+                                   modelName.includes('image');
+
+        return {
+          name: modelName,
+          isTextModel,
+          isTTSModel,
+          isSmallQuotaModel,
+          // Current interval (5h window for text, daily for others)
+          totalCount,
+          remainingCount,
+          usedCount: totalCount - remainingCount, // 反推已使用
+          percentage,
+          remainingTime: {
+            hours,
+            minutes,
+            text: hours > 0 ? `${hours} 小时 ${minutes} 分钟后重置` : `${minutes} 分钟后重置`,
+          },
+          // Time window
+          startTime: m.start_time,
+          endTime: m.end_time,
+          // Weekly quota
+          weeklyTotal,
+          weeklyRemainingCount,
+          weeklyUsed: weeklyTotal - weeklyRemainingCount, // 反推已使用
+          weeklyPercentage,
+          weeklyRemainingTime: {
+            days: weeklyDays,
+            hours: weeklyHours,
+            text: weeklyDays > 0 ? `${weeklyDays} 天 ${weeklyHours} 小时后重置` : `${weeklyHours} 小时后重置`,
+          },
+          // Status
+          isExhausted,
+          isOverLimit,
+          weeklyUnlimited,
+        };
+      });
+
+    // Separate text model, TTS model, and other models
+    const textModel = allModels.find(m => m.isTextModel) || null;
+    const ttsModel = allModels.find(m => m.isTTSModel) || null;
+    const otherModels = allModels.filter(m => !m.isTextModel && !m.isTTSModel);
+
+    return {
+      models: allModels,
+      textModel,
+      ttsModel,
+      otherModels,
+    };
+  }
+
   parseUsageData(apiData, subscriptionData) {
     if (!apiData.model_remains || apiData.model_remains.length === 0) {
       throw new Error("没有可用的使用数据");
@@ -312,7 +414,7 @@ class MinimaxAPI {
     // Calculate weekly usage data
     const weeklyUsed = modelData.current_weekly_total_count - modelData.current_weekly_usage_count;
     const weeklyTotal = modelData.current_weekly_total_count;
-    const weeklyPercentage = Math.floor((weeklyUsed / weeklyTotal) * 100);
+    const weeklyPercentage = weeklyTotal > 0 ? Math.floor((weeklyUsed / weeklyTotal) * 100) : 0;
     const weeklyRemainingMs = modelData.weekly_remains_time;
     const weeklyDays = Math.floor(weeklyRemainingMs / (1000 * 60 * 60 * 24));
     const weeklyHours = Math.floor((weeklyRemainingMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));

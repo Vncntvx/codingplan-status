@@ -6,43 +6,104 @@ class MinimaxStatusTreeProvider {
   constructor() {
     this._onDidChangeTreeData = new vscode.EventEmitter();
     this.onDidChangeTreeData = this._onDidChangeTreeData.event;
+    this.usageData = null;
+    this.usageStats = null;
+    this.language = "zh-CN";
+  }
+
+  setData(usageData, usageStats, language) {
+    this.usageData = usageData;
+    this.usageStats = usageStats;
+    this.language = language;
+    this.refresh();
   }
 
   getTreeItem(element) {
     return element;
   }
 
-  getChildren() {
+  getChildren(element) {
     const config = vscode.workspace.getConfiguration("minimaxStatus");
-    const language = config.get("language") || "zh-CN";
+    this.language = config.get("language") || "zh-CN";
+
+    // If element is provided, return its children (for nested items)
+    if (element && element.children) {
+      return element.children;
+    }
 
     const items = [];
 
+    // Token 消耗统计（可折叠组）
+    if (this.usageStats && (this.usageStats.lastDayUsage > 0 || this.usageStats.weeklyUsage > 0 || this.usageStats.planTotalUsage > 0)) {
+      const statsHeader = new vscode.TreeItem(
+        this.language === "zh-CN" ? "Token 消耗统计" : "Token Usage Stats",
+        vscode.TreeItemCollapsibleState.Expanded
+      );
+      statsHeader.iconPath = new vscode.ThemeIcon("graph");
+      statsHeader.children = [];
+
+      // 昨日消耗
+      const yesterday = new vscode.TreeItem(
+        `${this.language === "zh-CN" ? "昨日消耗" : "Yesterday"}: ${this.formatNum(this.usageStats.lastDayUsage)}`,
+        vscode.TreeItemCollapsibleState.None
+      );
+      yesterday.iconPath = new vscode.ThemeIcon("calendar");
+      statsHeader.children.push(yesterday);
+
+      // 近7天消耗
+      const weekly = new vscode.TreeItem(
+        `${this.language === "zh-CN" ? "近7天消耗" : "Last 7 days"}: ${this.formatNum(this.usageStats.weeklyUsage)}`,
+        vscode.TreeItemCollapsibleState.None
+      );
+      weekly.iconPath = new vscode.ThemeIcon("calendar");
+      statsHeader.children.push(weekly);
+
+      // 当月消耗
+      const monthly = new vscode.TreeItem(
+        `${this.language === "zh-CN" ? "当月消耗" : "This month"}: ${this.formatNum(this.usageStats.planTotalUsage)}`,
+        vscode.TreeItemCollapsibleState.None
+      );
+      monthly.iconPath = new vscode.ThemeIcon("calendar");
+      statsHeader.children.push(monthly);
+
+      items.push(statsHeader);
+    }
+
     // 插件设置
     const settingsItem = new vscode.TreeItem(
-      language === "zh-CN" ? "插件设置" : "Settings",
+      this.language === "zh-CN" ? "插件设置" : "Settings",
       vscode.TreeItemCollapsibleState.None
     );
     settingsItem.command = {
       command: "minimaxStatus.setup",
-      title: language === "zh-CN" ? "打开设置" : "Open Settings"
+      title: this.language === "zh-CN" ? "打开设置" : "Open Settings"
     };
     settingsItem.iconPath = new vscode.ThemeIcon("settings");
     items.push(settingsItem);
 
     // 使用教程
     const helpItem = new vscode.TreeItem(
-      language === "zh-CN" ? "使用教程" : "Help",
+      this.language === "zh-CN" ? "使用教程" : "Help",
       vscode.TreeItemCollapsibleState.None
     );
     helpItem.command = {
       command: "minimaxStatus.showHelp",
-      title: language === "zh-CN" ? "查看使用教程" : "View Help"
+      title: this.language === "zh-CN" ? "查看使用教程" : "View Help"
     };
     helpItem.iconPath = new vscode.ThemeIcon("question");
     items.push(helpItem);
 
     return items;
+  }
+
+  formatNum(num) {
+    if (num >= 100000000) {
+      return (num / 100000000).toFixed(1).replace(/\.0$/, "") + "亿";
+    }
+    if (num >= 10000) {
+      return (num / 10000).toFixed(1).replace(/\.0$/, "") + "万";
+    }
+    return num.toLocaleString("zh-CN");
   }
 
   refresh() {
@@ -100,9 +161,10 @@ function activate(context) {
 
         // Get overseas data if needed
         let overseasUsageData = null;
+        let overseasApiData = null;
         if (overseasDisplay === 'overseas' || overseasDisplay === 'both') {
           try {
-            const overseasApiData = await api.getOverseasUsageStatus();
+            overseasApiData = await api.getOverseasUsageStatus();
             overseasUsageData = api.parseUsageData(overseasApiData, null);
           } catch (overseasError) {
             console.error("Failed to fetch overseas data:", overseasError.message);
@@ -136,7 +198,8 @@ function activate(context) {
           usageStats = api.calculateUsageStats(billingCache, monthStart, now);
         }
 
-        updateStatusBar(statusBarItem, usageData, usageStats, overseasUsageData, overseasDisplay, language);
+        updateStatusBar(statusBarItem, api, usageData, apiData, usageStats, overseasUsageData, overseasApiData, overseasDisplay, language);
+        treeProvider.setData(usageData, usageStats, language);
       } catch (error) {
         console.error("获取状态失败:", error.message);
         const errorText = language === 'en-US' ? 'Error' : '错误';
@@ -817,7 +880,37 @@ async function showSettingsWebView(context, api, updateStatus) {
   return panel;
 }
 
-function updateStatusBar(statusBarItem, data, usageStats, overseasData = null, displayMode = 'none', language = 'zh-CN') {
+// Helper function to generate progress bar (VSCode tooltip compatible)
+function formatProgressBar(percentage, width = 20) {
+  const filled = Math.round((percentage / 100) * width);
+  const empty = width - filled;
+  return '[' + '\u2588'.repeat(filled) + '\u2591'.repeat(empty) + ']';
+}
+
+// Helper function to get progress color based on percentage
+function getProgressColor(percentage) {
+  if (percentage < 60) {
+    return new vscode.ThemeColor("charts.green");
+  } else if (percentage < 85) {
+    return new vscode.ThemeColor("charts.yellow");
+  } else {
+    return new vscode.ThemeColor("errorForeground");
+  }
+}
+
+// Helper to get model category color (for tooltip display)
+function getModelBarColor(model) {
+  if (model.isTextModel) {
+    return '#4A90E2'; // Blue for text model
+  } else if (model.name.includes('music')) {
+    return '#FFA726'; // Orange for music model
+  } else if (model.name.includes('speech')) {
+    return '#9E9E9E'; // Gray for speech model
+  }
+  return '#4A90E2'; // Default blue
+}
+
+function updateStatusBar(statusBarItem, api, data, apiData, usageStats, overseasData = null, overseasApiData = null, displayMode = 'none', language = 'zh-CN') {
   // Status bar i18n
   const statusI18n = {
     "zh-CN": {
@@ -943,50 +1036,124 @@ function updateStatusBar(statusBarItem, data, usageStats, overseasData = null, d
     statusBarItem.text = `$(clock) ${remainingText} ${percentage}%${weeklyText}`;
   }
 
-  // Build tooltip
+  // Build tooltip with multi-model support (Stitch design style)
   const tooltip = [];
 
-  // Add domestic usage info
-  tooltip.push(`[${t.domestic}]`);
-  tooltip.push(`${t.model}: ${data.modelName}`);
-  tooltip.push(`${t.usageProgress}: ${data.usage.percentage}% (${formatNumberI18n(data.usage.used)}/${formatNumberI18n(data.usage.total)})`);
-  tooltip.push(`${t.remainingTime}: ${translateRemainingText(data.remaining.text)}`);
-  tooltip.push(`${t.timeWindow}: ${data.timeWindow.start}-${data.timeWindow.end}(${data.timeWindow.timezone})`);
+  // Parse all models data
+  const allModelsData = api.parseAllModelsForTooltip(apiData);
 
-  // Add weekly usage info if available
-  if (data.weekly) {
-    tooltip.push(``, `${t.weeklyUsage}: ${data.weekly.percentage}% (${formatNumberI18n(data.weekly.used)}/${formatNumberI18n(data.weekly.total)})`);
-    // Translate weekly reset text
-    const weeklyResetText = language === 'en-US'
-      ? (data.weekly.days > 0
-        ? `${data.weekly.days}d ${data.weekly.hours}h until reset`
-        : `${data.weekly.hours}h until reset`)
-      : data.weekly.text;
-    tooltip.push(`${t.weeklyReset}: ${weeklyResetText}`);
+  // Helper function to format number
+  const formatNum = (num) => {
+    if (num >= 100000000) {
+      return (num / 100000000).toFixed(1).replace(/\.0$/, "") + "亿";
+    }
+    if (num >= 10000) {
+      return (num / 10000).toFixed(1).replace(/\.0$/, "") + "万";
+    }
+    return num.toLocaleString("zh-CN");
+  };
+
+  // Helper for weekly remaining text
+  const formatWeeklyRemaining = (model, showWeekly) => {
+    if (!showWeekly) {
+      return '';
+    }
+    if (model.weeklyUnlimited) {
+      return language === 'en-US' ? ' | Weekly: Unlimited' : ' | 周限额: 不受限制';
+    }
+    if (model.weeklyRemainingCount <= 0) {
+      return language === 'en-US'
+        ? ` | Weekly: ${formatNum(model.weeklyUsed)}/${formatNum(model.weeklyTotal)} exhausted`
+        : ` | 周: ${formatNum(model.weeklyUsed)}/${formatNum(model.weeklyTotal)} 已用完`;
+    }
+    return language === 'en-US'
+      ? ` | Weekly: ${formatNum(model.weeklyUsed)}/${formatNum(model.weeklyTotal)}`
+      : ` | 周: ${formatNum(model.weeklyUsed)}/${formatNum(model.weeklyTotal)}`;
+  };
+
+  // Helper for status text
+  const getStatusText = (model) => {
+    if (model.isOverLimit) {
+      return language === 'en-US' ? 'Over limit' : '已超限';
+    }
+    if (model.isExhausted) {
+      return language === 'en-US' ? 'Exhausted' : '已用完';
+    }
+    return language === 'en-US'
+      ? `Remaining ${formatNum(model.remainingCount)}`
+      : `剩余 ${formatNum(model.remainingCount)}`;
+  };
+
+  // Helper to format time window
+  const formatTimeWindow = (startTime, endTime) => {
+    if (!startTime || !endTime) return '';
+    const start = new Date(startTime);
+    const end = new Date(endTime);
+    const formatTime = (date) => date.toLocaleTimeString('zh-CN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'Asia/Shanghai',
+      hour12: false
+    });
+    return `${formatTime(start)} - ${formatTime(end)}`;
+  };
+
+  // Helper to calculate used percentage
+  const getUsedPercent = (model) => {
+    if (model.totalCount === 0) return 0;
+    const used = model.totalCount - model.remainingCount;
+    return Math.round((used / model.totalCount) * 100);
+  };
+
+  // Add MiniMax-M* (text model) first
+  if (allModelsData.textModel) {
+    const tm = allModelsData.textModel;
+    const timeWindow = formatTimeWindow(tm.startTime, tm.endTime);
+    const used = tm.totalCount - tm.remainingCount;
+    const usedPercent = getUsedPercent(tm);
+    tooltip.push(`[${tm.name}]`);
+    tooltip.push(`${formatProgressBar(usedPercent)} ${usedPercent}% (${formatNum(used)}/${formatNum(tm.totalCount)})`);
+    tooltip.push(`${language === 'en-US' ? 'Reset' : '重置'}: ${tm.remainingTime.text}${timeWindow ? ' (' + timeWindow + ')' : ''}`);
+    tooltip.push(`${language === 'en-US' ? 'Cycle quota' : '周期额'}: ${tm.weeklyUnlimited ? (language === 'en-US' ? 'Unlimited' : '不受限制') : formatNum(tm.weeklyRemainingCount) + '/' + formatNum(tm.weeklyTotal)}`);
   }
 
-  // Add overseas usage info if available
-  if (overseasData) {
-    tooltip.push(``, `[${t.overseas}]`);
-    tooltip.push(`${t.model}: ${overseasData.modelName}`);
-    tooltip.push(`${t.usageProgress}: ${overseasData.usage.percentage}% (${formatNumberI18n(overseasData.usage.used)}/${formatNumberI18n(overseasData.usage.total)})`);
-    tooltip.push(`${t.remainingTime}: ${translateRemainingText(overseasData.remaining.text)}`);
+  // Add TTS model
+  if (allModelsData.ttsModel) {
+    const tm = allModelsData.ttsModel;
+    const used = tm.totalCount - tm.remainingCount;
+    const usedPercent = getUsedPercent(tm);
+    tooltip.push(`[${tm.name}]`);
+    tooltip.push(`${formatProgressBar(usedPercent)} ${usedPercent}% (${formatNum(used)}/${formatNum(tm.totalCount)})`);
+    tooltip.push(`${language === 'en-US' ? 'Daily quota' : '日配额'}: ${getStatusText(tm)}${formatWeeklyRemaining(tm, true)}`);
+    // 周重置时间单独一行
+    if (!tm.weeklyUnlimited) {
+      tooltip.push(`${language === 'en-US' ? 'Weekly reset' : '周重置'}: ${tm.weeklyRemainingTime.days}${language === 'en-US' ? 'd' : '天'}${tm.weeklyRemainingTime.hours}${language === 'en-US' ? 'h' : '小时'}`);
+    }
   }
 
-  // Add billing stats if available
-  if (usageStats.lastDayUsage > 0 || usageStats.weeklyUsage > 0) {
-    tooltip.push(``, t.billingStats);
-    tooltip.push(`${t.yesterday}: ${formatNumberI18n(usageStats.lastDayUsage)}`);
-    tooltip.push(`${t.last7Days}: ${formatNumberI18n(usageStats.weeklyUsage)}`);
-    tooltip.push(`${t.totalUsage}: ${formatNumberI18n(usageStats.planTotalUsage)}`);
+  // Add other models (small quota models: Hailuo, music, image)
+  if (allModelsData.otherModels.length > 0) {
+    tooltip.push("");  // 空行分隔
+    tooltip.push(`[${language === 'en-US' ? 'Other Models' : '其他模型'}]`);
+    for (const model of allModelsData.otherModels) {
+      // 小额度模型不显示周限额
+      const showWeekly = !model.isSmallQuotaModel;
+      const used = model.totalCount - model.remainingCount;
+      const usedPercent = getUsedPercent(model);
+      tooltip.push(`${model.name}`);
+      tooltip.push(`${formatProgressBar(usedPercent)} ${usedPercent}% (${formatNum(used)}/${formatNum(model.totalCount)})`);
+      tooltip.push(`${language === 'en-US' ? 'Daily quota' : '日配额'}: ${getStatusText(model)}${formatWeeklyRemaining(model, showWeekly)}`);
+    }
   }
 
-  // Add expiry information if available
+  // 套餐到期时间
   if (expiry) {
-    tooltip.push(`${t.expiry}: ${expiry.date} (${translateExpiryText(expiry.text)})`);
+    tooltip.push("");
+    tooltip.push(`${t.expiry}: ${expiry.text}`);
   }
 
-  tooltip.push("", t.clickToRefresh);
+  tooltip.push("");
+  tooltip.push(t.clickToRefresh);
 
   statusBarItem.tooltip = tooltip.join("\n");
 }
