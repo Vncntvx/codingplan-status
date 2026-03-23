@@ -123,11 +123,15 @@ class Renderer {
     const filled = Math.round((usagePercentage / 100) * 10);
     const empty = 10 - filled;
     const usageBar = usageColor('█'.repeat(filled) + '\x1b[2m' + '░'.repeat(empty) + '\x1b[0m');
-    let usageLine = `${chalk.yellow('Usage')} ${usageBar} ${usageColor(usagePercentage + '%')} (${usage.remaining}/${usage.total})`;
+    let usageLine = `${usageBar} ${usageColor(usagePercentage + '%')} (${usage.remaining}/${usage.total})`;
     // 周用量紧跟在 usage 后面
     if (weekly) {
-      const weeklyColor = this.getStatusColor(weekly.percentage);
-      usageLine += ` ${chalk.gray('·')} ${chalk.blue('W')} ${weeklyColor(weekly.percentage + '%')}`;
+      if (weekly.unlimited) {
+        usageLine += ` ${chalk.gray('·')} ${chalk.blue('W')} ♾️`;
+      } else {
+        const weeklyColor = this.getStatusColor(weekly.percentage);
+        usageLine += ` ${chalk.gray('·')} ${chalk.blue('W')} ${weeklyColor(weekly.percentage + '%')}`;
+      }
     }
     parts.push(usageLine);
 

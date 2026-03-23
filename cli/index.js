@@ -131,6 +131,7 @@ program
       }
 
       const statusBar = new StatusBar(usageData, usageStats, api);
+      const allModels = api.parseAllModels(apiData);
 
       spinner.succeed("状态获取成功");
 
@@ -138,6 +139,7 @@ program
         console.log(statusBar.renderCompact());
       } else {
         console.log("\n" + statusBar.render() + "\n");
+        console.log(StatusBar.renderAllModels(allModels) + "\n");
       }
 
       if (options.watch) {
@@ -164,10 +166,12 @@ program
         api.getSubscriptionDetails(),
       ]);
       const usageData = api.parseUsageData(apiData, subscriptionData);
+      const allModels = api.parseAllModels(apiData);
       const statusBar = new StatusBar(usageData);
 
       spinner.succeed("状态获取成功");
       console.log("\n" + statusBar.render() + "\n");
+      console.log(StatusBar.renderAllModels(allModels) + "\n");
     } catch (error) {
       spinner.fail(chalk.red("获取状态失败"));
       console.error(chalk.red(`错误: ${error.message}`));
@@ -665,11 +669,15 @@ program
     // 使用量 - 进度条风格 (显示次数)
     const usageBar = coloredBar(usage.percentage);
     const usageColor = usage.percentage >= 85 ? chalk.red : usage.percentage >= 60 ? chalk.yellow : chalk.green;
-    let usageLine = `${chalk.yellow('Usage')} ${usageBar} ${usageColor(usage.percentage + '%')} (${usage.remaining}/${usage.total})`;
+    let usageLine = `${usageBar} ${usageColor(usage.percentage + '%')} (${usage.remaining}/${usage.total})`;
     // 周用量紧跟在 usage 后面
     if (weekly) {
-      const weeklyColor = weekly.percentage >= 85 ? chalk.red : weekly.percentage >= 60 ? chalk.yellow : chalk.green;
-      usageLine += ` ${chalk.gray('·')} ${chalk.blue('W')} ${weeklyColor(weekly.percentage + '%')}`;
+      if (weekly.unlimited) {
+        usageLine += ` ${chalk.gray('·')} ${chalk.blue('W')} ♾️`;
+      } else {
+        const weeklyColor = weekly.percentage >= 85 ? chalk.red : weekly.percentage >= 60 ? chalk.yellow : chalk.green;
+        usageLine += ` ${chalk.gray('·')} ${chalk.blue('W')} ${weeklyColor(weekly.percentage + '%')}`;
+      }
     }
     parts.push(usageLine);
     

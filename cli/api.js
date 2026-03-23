@@ -312,7 +312,7 @@ class MinimaxAPI {
     // Calculate weekly usage data
     const weeklyUsed = modelData.current_weekly_total_count - modelData.current_weekly_usage_count;
     const weeklyTotal = modelData.current_weekly_total_count;
-    const weeklyPercentage = Math.floor((weeklyUsed / weeklyTotal) * 100);
+    const weeklyPercentage = weeklyTotal > 0 ? Math.floor((weeklyUsed / weeklyTotal) * 100) : 0;
     const weeklyRemainingMs = modelData.weekly_remains_time;
     const weeklyDays = Math.floor(weeklyRemainingMs / (1000 * 60 * 60 * 24));
     const weeklyHours = Math.floor((weeklyRemainingMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
@@ -393,6 +393,7 @@ class MinimaxAPI {
         percentage: weeklyPercentage,
         days: weeklyDays,
         hours: weeklyHours,
+        unlimited: weeklyTotal === 0,
         text: weeklyDays > 0
           ? `${weeklyDays} 天 ${weeklyHours} 小时后重置`
           : `${weeklyHours} 小时后重置`,
@@ -400,6 +401,41 @@ class MinimaxAPI {
       contextWindow,
       expiry: expiryInfo,
     };
+  }
+
+  /**
+   * Parse all models from API data
+   * @param {Object} apiData - Raw API response
+   * @returns {Array} Array of model usage data
+   */
+  parseAllModels(apiData) {
+    if (!apiData.model_remains || apiData.model_remains.length === 0) {
+      return [];
+    }
+
+    return apiData.model_remains.map(modelData => {
+      const totalCount = modelData.current_interval_total_count;
+      const remainingCount = modelData.current_interval_usage_count;
+      const usedCount = totalCount - remainingCount;
+      const usedPercentage = totalCount > 0 ? Math.round((usedCount / totalCount) * 100) : 0;
+
+      // Weekly data
+      const weeklyTotal = modelData.current_weekly_total_count || 0;
+      const weeklyUsed = weeklyTotal > 0 ? (modelData.current_weekly_total_count - modelData.current_weekly_usage_count) : 0;
+      const weeklyPercentage = weeklyTotal > 0 ? Math.floor((weeklyUsed / weeklyTotal) * 100) : 0;
+
+      return {
+        name: modelData.model_name,
+        used: usedCount,
+        remaining: remainingCount,
+        total: totalCount,
+        percentage: usedPercentage,
+        unlimited: weeklyTotal === 0,
+        weeklyPercentage,
+        weeklyTotal,
+        weeklyRemainingCount: modelData.current_weekly_usage_count || 0,
+      };
+    });
   }
 }
 

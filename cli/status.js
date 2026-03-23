@@ -113,15 +113,21 @@ class StatusBar {
     // 周用量（如果有数据）
     if (weekly) {
       contentLines.push('');
-      const weeklyPercent = weekly.percentage;
-      const weeklyColor = weeklyPercent >= 85 ? chalk.red : weeklyPercent >= 60 ? chalk.yellow : chalk.green;
-      const weeklyProgress = this.createProgressBar(
-        Math.floor((weeklyPercent / 100) * 15),
-        15 - Math.floor((weeklyPercent / 100) * 15),
-        weeklyPercent
-      );
-      contentLines.push(`${chalk.cyan('周用量:')} ${weeklyColor(weeklyProgress)} ${weeklyColor(weekly.percentage + '%')} (${weekly.used}/${weekly.total})`);
-      contentLines.push(`${chalk.dim('     重置:')} ${weekly.text}`);
+      if (weekly.unlimited) {
+        // 不受限制
+        contentLines.push(`${chalk.cyan('周限额:')} ${chalk.green('不受限制')}`);
+      } else {
+        // 有限制，显示具体数据
+        const weeklyPercent = weekly.percentage;
+        const weeklyColor = weeklyPercent >= 85 ? chalk.red : weeklyPercent >= 60 ? chalk.yellow : chalk.green;
+        const weeklyProgress = this.createProgressBar(
+          Math.floor((weeklyPercent / 100) * 15),
+          15 - Math.floor((weeklyPercent / 100) * 15),
+          weeklyPercent
+        );
+        contentLines.push(`${chalk.cyan('周限额:')} ${weeklyColor(weeklyProgress)} ${weeklyColor(weekly.percentage + '%')} (${weekly.used}/${weekly.total})`);
+        contentLines.push(`${chalk.dim('     重置:')} ${weekly.text}`);
+      }
     }
 
     // 添加到期行（如果可用）
@@ -215,6 +221,42 @@ class StatusBar {
     const expiryInfo = expiry ? ` ${chalk.gray('•')} 剩余: ${expiry.daysRemaining}天` : '';
 
     return `${color('●')} ${modelName} ${usage.percentage}% ${chalk.dim(`(${usage.remaining}/${usage.total})`)} ${chalk.gray('•')} ${remaining.text} ${chalk.gray('•')} ${status}${expiryInfo}`;
+  }
+
+  // 渲染所有模型的额度
+  static renderAllModels(models) {
+    if (!models || models.length === 0) {
+      return '';
+    }
+
+    const lines = [];
+    lines.push('');
+    lines.push(chalk.bold('📋 所有模型额度'));
+
+    // 表头
+    lines.push(chalk.gray('─'.repeat(55)));
+    lines.push(`│ ${chalk.cyan('模型').padEnd(30)} ${chalk.cyan('已用/总额').padEnd(15)} ${chalk.cyan('状态')}`);
+    lines.push(chalk.gray('─'.repeat(55)));
+
+    for (const model of models) {
+      // 颜色基于百分比
+      let color;
+      if (model.percentage >= 85) {
+        color = chalk.red;
+      } else if (model.percentage >= 60) {
+        color = chalk.yellow;
+      } else {
+        color = chalk.green;
+      }
+
+      const status = model.percentage >= 85 ? '⚠ 即将用完' : model.percentage >= 60 ? '⚡ 注意' : '✓ 正常';
+      const name = model.name.length > 28 ? model.name.substring(0, 25) + '...' : model.name;
+
+      lines.push(`│ ${name.padEnd(30)} ${color(`${model.used}/${model.total} (${model.percentage}%)`).padEnd(15)} ${color(status)}`);
+    }
+
+    lines.push(chalk.gray('─'.repeat(55)));
+    return lines.join('\n');
   }
 }
 

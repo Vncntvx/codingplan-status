@@ -10,7 +10,7 @@ class StatusBar {
   }
 
   render() {
-    const { usage, remaining, modelName } = this.data;
+    const { usage, remaining, modelName, weekly } = this.data;
     const percentage = usage.percentage;
 
     // 基于已使用百分比：使用越多越危险
@@ -26,7 +26,17 @@ class StatusBar {
       ? `${remaining.hours}h${remaining.minutes}m`
       : `${remaining.minutes}m`;
 
-    return `${color('●')} ${modelName} ${color(percentage + '%')} (${usage.used}/${usage.total}) ${remainingText} ${statusIcon}`;
+    let weeklyStr = '';
+    if (weekly) {
+      if (weekly.unlimited) {
+        weeklyStr = ` ${chalk.blue('W')} ♾️`;
+      } else {
+        const weeklyColor = weekly.percentage >= 85 ? chalk.red : weekly.percentage >= 60 ? chalk.yellow : chalk.green;
+        weeklyStr = ` ${chalk.blue('W')} ${weeklyColor(weekly.percentage + '%')}`;
+      }
+    }
+
+    return `${color('●')} ${modelName} ${color(percentage + '%')} (${usage.used}/${usage.total}) ${remainingText}${weeklyStr} ${statusIcon}`;
   }
 }
 
