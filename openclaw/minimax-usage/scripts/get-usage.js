@@ -304,6 +304,7 @@ async function main() {
       weekly: usageData.weekly,
       contextWindow: usageData.contextWindow,
       expiry: usageData.expiry,
+      allModels: api.parseAllModels(apiData),
       stats: usageStats ? {
         lastDay: usageStats.lastDayUsage,
         lastDayFormatted: api.formatNumber(usageStats.lastDayUsage),
@@ -318,16 +319,30 @@ async function main() {
     const usagePct = usageData.usage.percentage;
     const weeklyPct = usageData.weekly.percentage;
     const usageBar = '█'.repeat(Math.floor(usagePct / 10)) + '░'.repeat(10 - Math.floor(usagePct / 10));
-    const weeklyBar = '█'.repeat(Math.floor(weeklyPct / 10)) + '░'.repeat(10 - Math.floor(weeklyPct / 10));
+    const weeklyBar = usageData.weekly.unlimited ? '' : '█'.repeat(Math.floor(weeklyPct / 10)) + '░'.repeat(10 - Math.floor(weeklyPct / 10));
 
     console.log(`\n[MiniMax Usage]`);
     console.log(`  Current:   [${usageBar}] ${usagePct}% (${usageData.usage.used}/${usageData.usage.total})`);
     console.log(`  Reset:     ${usageData.remaining.text}`);
-    console.log(`  Weekly:    [${weeklyBar}] ${weeklyPct}% (${api.formatNumber(usageData.weekly.used)})`);
-    console.log(`  W-Reset:   ${usageData.weekly.text}`);
+    if (usageData.weekly.unlimited) {
+      console.log(`  Weekly:    ♾️ Unlimited`);
+    } else {
+      console.log(`  Weekly:    [${weeklyBar}] ${weeklyPct}% (${api.formatNumber(usageData.weekly.used)})`);
+      console.log(`  W-Reset:   ${usageData.weekly.text}`);
+    }
     if (usageData.expiry) {
       console.log(`  Expiry:    ${usageData.expiry.text} (${usageData.expiry.date})`);
     }
+
+    // 显示所有模型额度
+    if (result.allModels && result.allModels.length > 1) {
+      console.log(`\n[All Models]`);
+      for (const m of result.allModels) {
+        const shortName = m.name.replace('MiniMax-', '').replace('MiniMax-', '');
+        console.log(`  ${shortName}: ${m.used}/${m.total} (${m.percentage}%)`);
+      }
+    }
+
     if (result.stats) {
       console.log(`\n[Token Stats]`);
       console.log(`  Yesterday: ${result.stats.lastDayFormatted}`);
