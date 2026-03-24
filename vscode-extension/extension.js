@@ -928,6 +928,11 @@ function updateStatusBar(statusBarItem, api, data, apiData, usageStats, overseas
       totalUsage: "当月消耗",
       expiry: "套餐到期",
       clickToRefresh: "点击刷新状态",
+      apiQuota: "API 配额",
+      reset: "重置",
+      used: "已用",
+      unlimited: "不受限制",
+      refresh: "刷新",
     },
     "en-US": {
       domestic: "Domestic",
@@ -942,8 +947,13 @@ function updateStatusBar(statusBarItem, api, data, apiData, usageStats, overseas
       yesterday: "Yesterday",
       last7Days: "Last 7 days",
       totalUsage: "This month",
-      expiry: "Expires",
+      expiry: "Expiry",
       clickToRefresh: "Click to refresh",
+      apiQuota: "API QUOTA",
+      reset: "Reset",
+      used: "Used",
+      unlimited: "Unlimited",
+      refresh: "Refresh",
     }
   };
 
@@ -1032,15 +1042,21 @@ function updateStatusBar(statusBarItem, api, data, apiData, usageStats, overseas
     // 显示格式：剩余时间 百分比 · 周 百分比
     const remainingText = remaining.hours > 0 ? `${remaining.hours}h` : `${remaining.minutes}m`;
     const weeklyLabel = language === 'en-US' ? 'W' : '周';
-    const weeklyText = data.weekly ? ` · ${weeklyLabel} ${data.weekly.percentage}%` : '';
+    let weeklyText = '';
+    if (data.weekly) {
+      if (data.weekly.unlimited) {
+        weeklyText = ` · ${weeklyLabel} ♾️`;
+      } else {
+        weeklyText = ` · ${weeklyLabel} ${data.weekly.percentage}%`;
+      }
+    }
     statusBarItem.text = `$(clock) ${remainingText} ${percentage}%${weeklyText}`;
   }
 
-  // Build tooltip with multi-model support (Stitch design style)
-  const tooltip = [];
-
-  // Parse all models data
+  // Build tooltip with Markdown list for proper alignment
   const allModelsData = api.parseAllModelsForTooltip(apiData);
+  const md = new vscode.MarkdownString();
+  md.isTrusted = true; // Enable full Markdown rendering
 
   // Helper function to format number
   const formatNum = (num) => {
@@ -1053,108 +1069,63 @@ function updateStatusBar(statusBarItem, api, data, apiData, usageStats, overseas
     return num.toLocaleString("zh-CN");
   };
 
-  // Helper for weekly remaining text
-  const formatWeeklyRemaining = (model, showWeekly) => {
-    if (!showWeekly) {
-      return '';
-    }
-    if (model.weeklyUnlimited) {
-      return language === 'en-US' ? ' | Weekly: Unlimited' : ' | 周限额: 不受限制';
-    }
-    if (model.weeklyRemainingCount <= 0) {
-      return language === 'en-US'
-        ? ` | Weekly: ${formatNum(model.weeklyUsed)}/${formatNum(model.weeklyTotal)} exhausted`
-        : ` | 周: ${formatNum(model.weeklyUsed)}/${formatNum(model.weeklyTotal)} 已用完`;
-    }
-    return language === 'en-US'
-      ? ` | Weekly: ${formatNum(model.weeklyUsed)}/${formatNum(model.weeklyTotal)}`
-      : ` | 周: ${formatNum(model.weeklyUsed)}/${formatNum(model.weeklyTotal)}`;
+  // Helper to format model display name (shorten Hailuo models)
+  const getModelDisplayName = (model) => {
+    const name = model.name || '';
+    if (name.includes('Hailuo-2.3-Fast-6s-768p')) return 'Hailuo-2.3-Fast';
+    if (name.includes('Hailuo-2.3-6s-768p')) return 'Hailuo-2.3';
+    if (name.includes('Hailuo')) return 'Hailuo';
+    if (name.includes('music')) return 'music';
+    if (name.includes('image')) return 'image';
+    if (name.includes('speech-hd')) return 'speech-hd';
+    if (name.includes('MiniMax-M')) return 'MiniMax-M*';
+    return name;
   };
 
-  // Helper for status text
-  const getStatusText = (model) => {
-    if (model.isOverLimit) {
-      return language === 'en-US' ? 'Over limit' : '已超限';
-    }
-    if (model.isExhausted) {
-      return language === 'en-US' ? 'Exhausted' : '已用完';
-    }
-    return language === 'en-US'
-      ? `Remaining ${formatNum(model.remainingCount)}`
-      : `剩余 ${formatNum(model.remainingCount)}`;
-  };
+  let mdContent = '';
 
-  // Helper to format time window
-  const formatTimeWindow = (startTime, endTime) => {
-    if (!startTime || !endTime) return '';
-    const start = new Date(startTime);
-    const end = new Date(endTime);
-    const formatTime = (date) => date.toLocaleTimeString('zh-CN', {
-      hour: '2-digit',
-      minute: '2-digit',
-      timeZone: 'Asia/Shanghai',
-      hour12: false
-    });
-    return `${formatTime(start)} - ${formatTime(end)}`;
-  };
+  // Title
+  mdContent += `**[ ${language === 'en-US' ? 'Token Plan' : '套餐额度'} ]**\n`;
 
-  // Helper to calculate used percentage
-  const getUsedPercent = (model) => {
-    if (model.totalCount === 0) return 0;
-    const used = model.totalCount - model.remainingCount;
-    return Math.round((used / model.totalCount) * 100);
-  };
-
-  // Add MiniMax-M* (text model) first
+  // MiniMax-M* section
   if (allModelsData.textModel) {
-    const tm = allModelsData.textModel;
-    const timeWindow = formatTimeWindow(tm.startTime, tm.endTime);
-    const used = tm.totalCount - tm.remainingCount;
-    const usedPercent = getUsedPercent(tm);
-    tooltip.push(`[${tm.name}]`);
-    tooltip.push(`  ${language === 'en-US' ? 'Usage' : '使用'}: ${usedPercent}% (${formatNum(used)}/${formatNum(tm.totalCount)})`);
-    tooltip.push(`  ${language === 'en-US' ? 'Reset' : '重置'}: ${tm.remainingTime.text}${timeWindow ? ' (' + timeWindow + ')' : ''}`);
-    tooltip.push(`  ${language === 'en-US' ? 'Weekly quota' : '周限额'}: ${tm.weeklyUnlimited ? (language === 'en-US' ? 'Unlimited' : '不受限制') : formatNum(tm.weeklyRemainingCount) + '/' + formatNum(tm.weeklyTotal)}`);
-    // 有限额时显示周重置时间
-    if (!tm.weeklyUnlimited) {
-      tooltip.push(`  ${language === 'en-US' ? 'Weekly reset' : '周重置'}: ${tm.weeklyRemainingTime.days}${language === 'en-US' ? 'd' : '天'}${tm.weeklyRemainingTime.hours}${language === 'en-US' ? 'h' : '小时'}`);
+    const m = allModelsData.textModel;
+    const used = m.totalCount - m.remainingCount;
+    const pct = m.totalCount > 0 ? Math.round((used / m.totalCount) * 100) : 0;
+    mdContent += `**MiniMax-M***\n`;
+    mdContent += `- ${pct}% · ${used}/${formatNum(m.totalCount)}\n`;
+    mdContent += `- ${language === 'en-US' ? 'Reset' : '重置'}: ${m.remainingTime.text}\n`;
+    mdContent += `- ${language === 'en-US' ? 'Weekly' : '周限额'}: ${m.weeklyUnlimited ? (language === 'en-US' ? 'Unlimited' : '不受限制') : formatNum(m.weeklyRemainingCount) + '/' + formatNum(m.weeklyTotal)}\n`;
+  }
+
+  // Daily models section
+  const dailyModels = allModelsData.models?.filter(m => !m.isTextModel) || [];
+  if (dailyModels.length > 0) {
+    mdContent += `\n**[ ${language === 'en-US' ? 'Daily (00:00)' : '日限额 (00:00)'} ]**\n`;
+
+    for (const m of dailyModels) {
+      const used = m.totalCount - m.remainingCount;
+      const pct = m.totalCount > 0 ? Math.round((used / m.totalCount) * 100) : 0;
+      const name = getModelDisplayName(m);
+      mdContent += `- ${name}: ${pct}% · ${used}/${formatNum(m.totalCount)}\n`;
     }
-    tooltip.push("");
   }
 
-  // Add TTS model (speech-hd 只有日配额，每日 00:00 重置)
-  if (allModelsData.ttsModel) {
-    const tm = allModelsData.ttsModel;
-    const used = tm.totalCount - tm.remainingCount;
-    const usedPercent = getUsedPercent(tm);
-    tooltip.push(`[${tm.name}]`);
-    tooltip.push(`  ${language === 'en-US' ? 'Usage' : '使用'}: ${usedPercent}% (${formatNum(used)}/${formatNum(tm.totalCount)})`);
-    tooltip.push(`  ${language === 'en-US' ? 'Daily quota' : '日配额'}: ${getStatusText(tm)}`);
-    tooltip.push(`  ${language === 'en-US' ? 'Reset at' : '重置'}: 00:00`);
-    tooltip.push("");
+  // Token Usage Stats section
+  if (usageStats && (usageStats.lastDayUsage > 0 || usageStats.weeklyUsage > 0 || usageStats.planTotalUsage > 0)) {
+    mdContent += `\n**[ ${language === 'en-US' ? 'Token Usage Stats' : 'Token 消耗统计'} ]**\n`;
+    mdContent += `- ${language === 'en-US' ? 'Yesterday' : '昨日'}: ${formatNum(usageStats.lastDayUsage)}\n`;
+    mdContent += `- ${language === 'en-US' ? 'Last 7 days' : '近7天'}: ${formatNum(usageStats.weeklyUsage)}\n`;
+    mdContent += `- ${language === 'en-US' ? 'This month' : '当月'}: ${formatNum(usageStats.planTotalUsage)}\n`;
   }
 
-  // Add other models (small quota models: Hailuo, music, image)
-  if (allModelsData.otherModels.length > 0) {
-    // 其他模型重置时间统一在标题后面
-    tooltip.push(`[${language === 'en-US' ? 'Other Models' : '其他模型'}] (${language === 'en-US' ? 'Reset at 00:00' : '00:00 重置'})`);
-    for (const model of allModelsData.otherModels) {
-      const used = model.totalCount - model.remainingCount;
-      tooltip.push(`  ${model.name}  (${formatNum(used)}/${formatNum(model.totalCount)})`);
-    }
-    tooltip.push("");
-  }
+  // Footer
+  mdContent += `\n`;
+  const expiryText = expiry ? `${language === 'en-US' ? 'Expiry' : '到期'}: ${expiry.text}` : '';
+  mdContent += `${expiryText} · ${t.clickToRefresh}`;
 
-  // 套餐到期时间
-  if (expiry) {
-    tooltip.push("");
-    tooltip.push(`${t.expiry}: ${expiry.text}`);
-  }
-
-  tooltip.push("");
-  tooltip.push(t.clickToRefresh);
-
-  statusBarItem.tooltip = tooltip.join("\n");
+  md.appendMarkdown(mdContent);
+  statusBarItem.tooltip = md;
 }
 
 function deactivate() {

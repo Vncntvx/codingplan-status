@@ -312,8 +312,17 @@ class MinimaxAPI {
                                    modelName.includes('music') ||
                                    modelName.includes('image');
 
+        // Determine short name for table display
+        let shortName = modelName;
+        if (modelName.includes('Hailuo')) shortName = 'Hailuo';
+        else if (modelName.includes('music')) shortName = 'music';
+        else if (modelName.includes('image')) shortName = 'image';
+        else if (modelName.includes('speech')) shortName = 'speech-hd';
+        else if (modelName.includes('MiniMax-M')) shortName = 'MiniMax-M*';
+
         return {
           name: modelName,
+          shortName,
           isTextModel,
           isTTSModel,
           isSmallQuotaModel,
@@ -415,6 +424,7 @@ class MinimaxAPI {
     const weeklyUsed = modelData.current_weekly_total_count - modelData.current_weekly_usage_count;
     const weeklyTotal = modelData.current_weekly_total_count;
     const weeklyPercentage = weeklyTotal > 0 ? Math.floor((weeklyUsed / weeklyTotal) * 100) : 0;
+    const weeklyUnlimited = weeklyTotal === 0;
     const weeklyRemainingMs = modelData.weekly_remains_time;
     const weeklyDays = Math.floor(weeklyRemainingMs / (1000 * 60 * 60 * 24));
     const weeklyHours = Math.floor((weeklyRemainingMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
@@ -506,6 +516,7 @@ class MinimaxAPI {
         percentage: weeklyPercentage,
         days: weeklyDays,
         hours: weeklyHours,
+        unlimited: weeklyUnlimited,
         text: weeklyDays > 0
           ? `${weeklyDays} 天 ${weeklyHours} 小时后重置`
           : `${weeklyHours} 小时后重置`,
