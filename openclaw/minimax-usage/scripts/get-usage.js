@@ -160,17 +160,20 @@ class MinimaxAPI {
     const startTime = new Date(modelData.start_time);
     const endTime = new Date(modelData.end_time);
 
+    // API 字段 usage_count 实际上是剩余配额，不是已用
+    const totalCount = modelData.current_interval_total_count;
     const remainingCount = modelData.current_interval_usage_count;
-    const usedCount = modelData.current_interval_total_count - remainingCount;
-    const usedPercentage = Math.round((usedCount / modelData.current_interval_total_count) * 100);
+    const usedCount = totalCount - remainingCount;
+    const usedPercentage = Math.round((usedCount / totalCount) * 100);
 
     const remainingMs = modelData.remains_time;
     const hours = Math.floor(remainingMs / (1000 * 60 * 60));
     const minutes = Math.floor((remainingMs % (1000 * 60 * 60)) / (1000 * 60));
 
-    // 周用量
-    const weeklyUsed = modelData.current_weekly_total_count - modelData.current_weekly_usage_count;
-    const weeklyTotal = modelData.current_weekly_total_count;
+    // 周用量 - 同样的规律
+    const weeklyTotal = modelData.current_weekly_total_count || 0;
+    const weeklyRemaining = modelData.current_weekly_usage_count || 0;
+    const weeklyUsed = weeklyTotal - weeklyRemaining;
     const weeklyPercentage = weeklyTotal > 0 ? Math.floor((weeklyUsed / weeklyTotal) * 100) : 0;
     const weeklyRemainingMs = modelData.weekly_remains_time;
     const weeklyDays = Math.floor(weeklyRemainingMs / (1000 * 60 * 60 * 24));
@@ -250,12 +253,14 @@ class MinimaxAPI {
 
     return apiData.model_remains.map(modelData => {
       const totalCount = modelData.current_interval_total_count;
+      // API 字段 usage_count 实际上是剩余配额，不是已用
       const remainingCount = modelData.current_interval_usage_count;
       const usedCount = totalCount - remainingCount;
       const usedPercentage = totalCount > 0 ? Math.round((usedCount / totalCount) * 100) : 0;
 
       const weeklyTotal = modelData.current_weekly_total_count || 0;
-      const weeklyUsed = weeklyTotal > 0 ? (modelData.current_weekly_total_count - modelData.current_weekly_usage_count) : 0;
+      const weeklyRemaining = modelData.current_weekly_usage_count || 0;
+      const weeklyUsed = weeklyTotal - weeklyRemaining;
       const weeklyPercentage = weeklyTotal > 0 ? Math.floor((weeklyUsed / weeklyTotal) * 100) : 0;
 
       return {
@@ -267,7 +272,7 @@ class MinimaxAPI {
         unlimited: weeklyTotal === 0,
         weeklyPercentage,
         weeklyTotal,
-        weeklyRemainingCount: modelData.current_weekly_usage_count || 0,
+        weeklyRemainingCount: weeklyRemaining,
       };
     });
   }
@@ -315,44 +320,75 @@ async function main() {
       } : null
     };
 
-    // 人类可读摘要
+    // 人类可读摘要 - 美化输出
     const usagePct = usageData.usage.percentage;
     const weeklyPct = usageData.weekly.percentage;
-    const usageBar = '█'.repeat(Math.floor(usagePct / 10)) + '░'.repeat(10 - Math.floor(usagePct / 10));
-    const weeklyBar = usageData.weekly.unlimited ? '' : '█'.repeat(Math.floor(weeklyPct / 10)) + '░'.repeat(10 - Math.floor(weeklyPct / 10));
 
-    console.log(`\n[MiniMax Usage]`);
-    console.log(`  Current:   [${usageBar}] ${usagePct}% (${usageData.usage.used}/${usageData.usage.total})`);
-    console.log(`  Reset:     ${usageData.remaining.text}`);
-    if (usageData.weekly.unlimited) {
-      console.log(`  Weekly:    ♾️ Unlimited`);
+    // 进度条函数
+    const makeBar = (pct, width = 8) => {
+      const filled = Math.round((pct / 100) * width);
+      const empty = width - filled;
+      return '█'.repeat(filled) + '░'.repeat(empty);
+    };
+
+    // 警告emoji
+    const warn = (pct) => pct >= 90 ? ' 🔥' : pct >= 70 ? ' ⚡' : '';
+
+    console.log(`\n╭──────────────────────────────────────╮`);
+    console.log(`│   🤖  MiniMax 额度查询               │`);
+    console.log(`╰──────────────────────────────────────╯`);
+
+    // 主模型状态
+    console.log(`\n📊  主模型 ${usageData.modelName}`);
+    console.log(`   每日  ${makeBar(usagePct)} ${usagePct}%`);
+    console.log(`   使用量  ${api.formatNumber(usageData.usage.used)} / ${api.formatNumber(usageData.usage.total)}${warn(usagePct)}`);
+    console.log(`   重置  ${usageData.remaining.text}`);
+
+    // 周额度（如果不是无限）
+    if (!usageData.weekly.unlimited) {
+      console.log(`\n📅  本周`);
+      console.log(`   进度  ${makeBar(weeklyPct)} ${weeklyPct}%`);
+      console.log(`   使用量  ${api.formatNumber(usageData.weekly.used)} / ${api.formatNumber(usageData.weekly.total)}`);
+      console.log(`   重置  ${usageData.weekly.text}`);
     } else {
-      console.log(`  Weekly:    [${weeklyBar}] ${weeklyPct}% (${api.formatNumber(usageData.weekly.used)})`);
-      console.log(`  W-Reset:   ${usageData.weekly.text}`);
+      console.log(`\n📅  本周  ♾️ 无限制`);
     }
+
+    // 到期信息
     if (usageData.expiry) {
-      console.log(`  Expiry:    ${usageData.expiry.text} (${usageData.expiry.date})`);
+      console.log(`\n📆  到期  ${usageData.expiry.text}`);
     }
 
-    // 显示所有模型额度
+    // 所有模型列表
     if (result.allModels && result.allModels.length > 1) {
-      console.log(`\n[All Models]`);
+      console.log(`\n╭──────────────────────────────────────╮`);
+      console.log(`│   📋  所有模型额度                   │`);
+      console.log(`╰──────────────────────────────────────╯`);
       for (const m of result.allModels) {
-        const shortName = m.name.replace('MiniMax-', '').replace('MiniMax-', '');
-        console.log(`  ${shortName}: ${m.used}/${m.total} (${m.percentage}%)`);
+        const shortName = m.name
+          .replace('MiniMax-', '')
+          .replace('MiniMax-Hailuo-2.3-', 'Hailuo-')
+          .replace('MiniMax-', '');
+        const pct = m.total > 0 ? Math.round((m.used / m.total) * 100) : 0;
+        const bar = makeBar(pct, 6);
+        console.log(`\n   ${shortName}`);
+        console.log(`   ${bar} ${pct}%  ${api.formatNumber(m.used)} / ${api.formatNumber(m.total)}${warn(pct)}`);
       }
     }
 
+    // Token消耗统计
     if (result.stats) {
-      console.log(`\n[Token Stats]`);
-      console.log(`  Yesterday: ${result.stats.lastDayFormatted}`);
-      console.log(`  7-Days:   ${result.stats.weeklyFormatted}`);
+      console.log(`\n╭──────────────────────────────────────╮`);
+      console.log(`│   💰  Token 消耗统计                  │`);
+      console.log(`╰──────────────────────────────────────╯`);
+      console.log(`\n   昨日  ${result.stats.lastDayFormatted}`);
+      console.log(`   近7日 ${result.stats.weeklyFormatted}`);
       if (result.stats.planTotalFormatted !== '0') {
-        console.log(`  This Month: ${result.stats.planTotalFormatted}`);
+        console.log(`   本月  ${result.stats.planTotalFormatted}`);
       }
     }
-    console.log(`\n--- JSON ---`);
-    console.log(JSON.stringify(result, null, 2));
+
+    console.log();
   } catch (error) {
     console.error(`❌ 错误: ${error.message}`);
     process.exit(1);
