@@ -407,6 +407,16 @@ MIT License - 详见 [LICENSE](LICENSE) 文件
 
 欢迎提交 Issue 和 Pull Request！
 
+## 导航
+
+| 客户端 | 路径 | 说明 |
+|--------|------|------|
+| **CLI** | [`cli/`](cli/) | 命令行工具，npm 全局包 |
+| **VSCode** | [`vscode-extension/`](vscode-extension/) | VSCode 状态栏集成 |
+| **OpenClaw** | [`openclaw/`](openclaw/) | OpenClaw 集成 |
+
+---
+
 ## 相关链接
 
 - [MiniMax 开放平台](https://platform.minimaxi.com/)
