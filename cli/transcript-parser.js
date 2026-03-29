@@ -147,36 +147,43 @@ class TranscriptParser {
     }
 
     try {
-      const fileContent = fs.readFileSync(transcriptPath, 'utf8');
-      const lines = fileContent.trim().split('\n').filter(line => line.trim());
+      const stats = fs.statSync(transcriptPath);
+      const fileSize = stats.size;
+      const bufferSize = Math.min(fileSize, 64 * 1024); // 读取最后 64KB
+      const buffer = Buffer.alloc(bufferSize);
+      
+      const fd = fs.openSync(transcriptPath, 'r');
+      fs.readSync(fd, buffer, 0, bufferSize, Math.max(0, fileSize - bufferSize));
+      fs.closeSync(fd);
 
-      if (lines.length === 0) {
-        return null;
-      }
+      const content = buffer.toString('utf8');
+      const lines = content.split('\n').filter(line => line.trim());
 
+      if (lines.length === 0) return null;
+
+      // 检查最后一行是否是 summary
       const lastLine = lines[lines.length - 1].trim();
-      const lastEntry = JSON.parse(lastLine);
+      try {
+        const lastEntry = JSON.parse(lastLine);
+        if (lastEntry.type === 'summary' && lastEntry.leafUuid) {
+          return this.findUsageByUuid(transcriptPath, lastEntry.leafUuid);
+        }
+      } catch (e) {}
 
-      if (lastEntry.type === 'summary' && lastEntry.leafUuid) {
-        return this.findUsageByUuid(transcriptPath, lastEntry.leafUuid);
-      }
-
+      // 从后往前找最近的 assistant usage
       for (let i = lines.length - 1; i >= 0; i--) {
-        const line = lines[i].trim();
-        if (!line) continue;
-
         try {
-          const entry = JSON.parse(line);
+          const entry = JSON.parse(lines[i]);
           if (entry.type === 'assistant' && entry.message?.usage) {
             return this.calculateContextTokens(entry.message.usage);
           }
-        } catch {
+        } catch (e) {
           continue;
         }
       }
 
       return null;
-    } catch {
+    } catch (error) {
       return null;
     }
   }

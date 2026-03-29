@@ -5,6 +5,15 @@ const chalk = require('chalk').default;
 class Renderer {
   constructor() {
     this.RESET = '\x1b[0m';
+    // 自动检测：如果环境变量设置了 MINIMAX_PLAIN_UI 或者是 NO_NERD_FONTS，则停用特殊图标
+    this.useNerdFonts = !process.env.MINIMAX_PLAIN_UI && !process.env.NO_NERD_FONTS;
+    
+    // 图标配置
+    this.icons = {
+      arrow: this.useNerdFonts ? '\uE0B0' : '>',
+      leftArrow: this.useNerdFonts ? '\uE0B0' : '>', // 改为顺向箭头，实现顺行感
+      branch: this.useNerdFonts ? '\uE0A0' : '*'
+    };
   }
 
   formatTokens(tokens) {
@@ -60,94 +69,91 @@ class Renderer {
 
   renderSessionLine(data) {
     const {
-      modelName,
-      currentDir,
-      usagePercentage,
-      usage,
-      remaining,
-      expiry,
-      contextUsage,
-      contextSize,
-      configCounts,
-      sessionDuration,
-      weekly,
+      modelName, currentDir, usagePercentage, usage,
+      remaining, expiry, contextUsage, contextSize, weekly, gitBranch
     } = data;
 
-    const parts = [];
+    const blocks = [];
 
+    // Pure Powerline Data Blocks
     if (currentDir) {
-      parts.push(`${chalk.cyan(currentDir)}`);
+      blocks.push({ text: ` ${currentDir} `, bg: '#2563EB', fg: '#FFFFFF' });
     }
 
-    // Git 分支显示
-    if (data.gitBranch && data.gitBranch.name) {
-      const { name, ahead, behind, hasChanges } = data.gitBranch;
-
-      // 主分支(main/master)用绿色，其他分支用白色
-      const isMainBranch = name === 'main' || name === 'master';
-      const branchColor = isMainBranch ? chalk.green : chalk.white;
-
-      // 分支名截断处理：超过20字符时截断并省略中间部分
-      let displayBranchName = name;
-      if (name.length > 20) {
-        const prefixLength = 10;
-        const suffixLength = 7;
-        displayBranchName = name.substring(0, prefixLength) + '…' + name.substring(name.length - suffixLength);
-      }
-
-      // 构建分支显示字符串
-      let branchStr = branchColor(displayBranchName);
-
-      // 未提交更改用 * 标记
-      if (hasChanges) {
-        branchStr += chalk.red(' *');
-      }
-
-      parts.push(branchStr);
+    if (gitBranch && gitBranch.name) {
+      let name = gitBranch.name;
+      if (name.length > 20) name = name.substring(0, 10) + '…' + name.substring(name.length - 7);
+      const star = gitBranch.hasChanges ? ' *' : '';
+      blocks.push({ text: ` ${this.icons.branch} ${name}${star} `, bg: '#9333EA', fg: '#FFFFFF' });
     }
 
-    // 模型
-    parts.push(`${chalk.magenta(modelName)}`);
-
-    // 上下文窗口
-    if (contextUsage !== null && contextUsage !== undefined) {
-      const contextPercent = Math.round((contextUsage / contextSize) * 100);
-      const contextColor = this.getStatusColor(contextPercent);
-      parts.push(`${contextColor(contextPercent + '%')} ${contextColor('·')} ${contextColor(this.formatTokens(contextUsage) + ' tokens')}`);
-    } else {
-      parts.push(chalk.cyan(this.formatContextSize(contextSize)));
+    if (modelName) {
+      blocks.push({ text: ` ${modelName} `, bg: '#4C1D95', fg: '#FFFFFF' });
     }
 
-    // 使用量 - 进度条风格
-    const usageColor = this.getStatusColor(usagePercentage);
-    const filled = Math.round((usagePercentage / 100) * 10);
-    const empty = 10 - filled;
-    const usageBar = usageColor('█'.repeat(filled) + '\x1b[2m' + '░'.repeat(empty) + '\x1b[0m');
-    let usageLine = `${usageBar} ${usageColor(usagePercentage + '%')} (${usage.remaining}/${usage.total})`;
-    // 周用量紧跟在 usage 后面
-    if (weekly) {
-      if (weekly.unlimited) {
-        usageLine += ` ${chalk.gray('·')} ${chalk.blue('W')} ♾️`;
+    if (contextSize) {
+      if (contextUsage) {
+        const pct = Math.round((contextUsage / contextSize) * 100);
+        blocks.push({ text: ` ${pct}% · ${this.formatTokens(contextUsage)} `, bg: '#0369A1', fg: '#FFFFFF' });
       } else {
-        const weeklyColor = this.getStatusColor(weekly.percentage);
-        usageLine += ` ${chalk.gray('·')} ${chalk.blue('W')} ${weeklyColor(weekly.percentage + '%')}`;
+        blocks.push({ text: ` ${this.formatContextSize(contextSize)} `, bg: '#0369A1', fg: '#FFFFFF' });
       }
     }
-    parts.push(usageLine);
 
-    // 倒计时 - 保留图标
-    const remainingText = remaining.hours > 0
-      ? `${remaining.hours}h${remaining.minutes}m`
-      : `${remaining.minutes}m`;
-    parts.push(`${chalk.yellow('⏱')} ${remainingText}`);
+    if (usage && usage.total > 0) {
+      let bg = '#065F46'; // safe (Emerald 800 - dark enough for white text)
+      if (usagePercentage >= 95) bg = '#991B1B'; // danger (Red 800)
+      else if (usagePercentage >= 75) bg = '#9A3412'; // warn (Orange 800)
 
-    // 到期 - 保留图标
-    if (expiry) {
-      const expiryColor = expiry.daysRemaining <= 3 ? chalk.red : expiry.daysRemaining <= 7 ? chalk.yellow : chalk.green;
-      parts.push(`${expiryColor('到期 ' + expiry.daysRemaining + '天')}`);
+      let usageText = ` ${usagePercentage}%  (${usage.remaining}/${usage.total}) `;
+      
+      if (weekly) {
+        if (weekly.unlimited) {
+          usageText += `· W ∞ `;
+        } else {
+          usageText += `· W ${weekly.percentage}% `;
+        }
+      }
+      blocks.push({ text: usageText, bg: bg, fg: '#FFFFFF' });
     }
 
-    return parts.join(' │ ');
+    if (remaining) {
+      const remainingText = remaining.hours > 0 ? `${remaining.hours}h${remaining.minutes}m` : `${remaining.minutes}m`;
+      blocks.push({ text: ` ${remainingText} `, bg: '#92400E', fg: '#FFFFFF' });
+    }
+
+    if (expiry) {
+      let bg = '#374151'; // Gray 700
+      if (expiry.daysRemaining <= 7) bg = '#9A3412';
+      if (expiry.daysRemaining <= 3) bg = '#991B1B';
+      blocks.push({ text: ` 剩${expiry.daysRemaining}天 `, bg: bg, fg: '#FFFFFF' });
+    }
+
+    // Powerline arrow seamless integration
+    let out = '';
+    const arrow = this.icons.arrow;
+    
+    for (let i = 0; i < blocks.length; i++) {
+      const b = blocks[i];
+      // 顺行式起点：使用正向箭头 + 黑色前景色模拟内凹效果
+      if (i === 0) {
+        out += this.RESET + chalk.bgHex(b.bg).black(this.icons.leftArrow);
+      }
+      // 磁贴文字
+      out += chalk.bgHex(b.bg).whiteBright(b.text);
+      if (i < blocks.length - 1) {
+        const nextB = blocks[i + 1];
+        if (this.useNerdFonts) {
+          out += chalk.bgHex(nextB.bg).hex(b.bg)(arrow);
+        } else {
+          out += chalk.bgHex(b.bg).whiteBright(arrow);
+        }
+      } else {
+        out += chalk.hex(b.bg)(arrow);
+      }
+    }
+
+    return out;
   }
 
   renderToolsLine(tools) {

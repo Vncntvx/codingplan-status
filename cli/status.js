@@ -79,14 +79,14 @@ class StatusBar {
 
     // 获取状态颜色
     const getStatusColor = (percentage) => {
-      if (percentage >= 85) return chalk.red;
-      if (percentage >= 60) return chalk.yellow;
-      return chalk.green;
+      if (percentage >= 85) return chalk.hex('#EF4444');
+      if (percentage >= 60) return chalk.hex('#F59E0B');
+      return chalk.hex('#10B981');
     };
 
     // 显示状态
     const getStatusText = (percentage) => {
-      if (percentage >= 85) return '⚠';
+      if (percentage >= 85) return '⛔';
       if (percentage >= 60) return '⚡';
       return '✓';
     };
@@ -166,11 +166,11 @@ class StatusBar {
       contentLines.push('');
       if (weekly.unlimited) {
         // 不受限制
-        contentLines.push(`${chalk.cyan('周限额:')} ${chalk.green('不受限制')}`);
+        contentLines.push(`${chalk.cyan('周限额:')} ${chalk.hex('#10B981')('不受限制')}`);
       } else {
         // 有限制，显示具体数据
         const weeklyPercent = weekly.percentage;
-        const weeklyColor = weeklyPercent >= 85 ? chalk.red : weeklyPercent >= 60 ? chalk.yellow : chalk.green;
+        const weeklyColor = weeklyPercent >= 85 ? chalk.hex('#EF4444') : weeklyPercent >= 60 ? chalk.hex('#F59E0B') : chalk.hex('#10B981');
         const weeklyProgress = this.createProgressBar(
           Math.floor((weeklyPercent / 100) * 15),
           15 - Math.floor((weeklyPercent / 100) * 15),
@@ -222,11 +222,11 @@ class StatusBar {
 
     // 进度条颜色基于已使用百分比：使用越多越危险（红色）
     if (percentage >= 85) {
-      return chalk.red(bar);
+      return chalk.hex('#EF4444')(bar);
     } else if (percentage >= 60) {
-      return chalk.yellow(bar);
+      return chalk.hex('#F59E0B')(bar);
     } else {
-      return chalk.green(bar);
+      return chalk.hex('#10B981')(bar);
     }
   }
 
@@ -240,18 +240,18 @@ class StatusBar {
 
   getStatusColor(status) {
     if (status === '⚡ 注意使用') {
-      return chalk.yellow(status);
-    } else if (status === '⚠ 即将用完') {
-      return chalk.red(status);
+      return chalk.hex('#F59E0B')(status);
+    } else if (status === '⛔ 即将用完') {
+      return chalk.hex('#EF4444')(status);
     } else {
-      return chalk.green(status);
+      return chalk.hex('#10B981')(status);
     }
   }
 
   getStatus(percentage) {
     // 基于已使用百分比
     if (percentage >= 85) {
-      return '⚠ 即将用完';
+      return '⛔ 即将用完';
     } else if (percentage >= 60) {
       return '⚡ 注意使用';
     } else {
@@ -266,11 +266,11 @@ class StatusBar {
     // 颜色基于已使用百分比：使用越多越危险
     let color;
     if (usage.percentage >= 85) {
-      color = chalk.red;
+      color = chalk.hex('#EF4444');
     } else if (usage.percentage >= 60) {
-      color = chalk.yellow;
+      color = chalk.hex('#F59E0B');
     } else {
-      color = chalk.green;
+      color = chalk.hex('#10B981');
     }
 
     // 添加到期信息（如果可用）
@@ -298,14 +298,14 @@ class StatusBar {
       // 颜色基于百分比
       let color;
       if (model.percentage >= 85) {
-        color = chalk.red;
+        color = chalk.hex('#EF4444');
       } else if (model.percentage >= 60) {
-        color = chalk.yellow;
+        color = chalk.hex('#F59E0B');
       } else {
-        color = chalk.green;
+        color = chalk.hex('#10B981');
       }
 
-      const status = model.percentage >= 85 ? '⚠ 即将用完' : model.percentage >= 60 ? '⚡ 注意' : '✓ 正常';
+      const status = model.percentage >= 85 ? '⛔ 即将用完' : model.percentage >= 60 ? '⚡ 注意' : '✓ 正常';
       const name = model.name.length > 28 ? model.name.substring(0, 25) + '...' : model.name;
 
       lines.push(`│ ${name.padEnd(30)} ${color(`${model.used}/${model.total} (${model.percentage}%)`).padEnd(15)} ${color(status)}`);

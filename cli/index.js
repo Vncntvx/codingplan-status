@@ -350,13 +350,17 @@ program
         }
       }
 
-      // 使用 Claude Code 提供的 context_window（最准确）
-      let contextUsageValue = contextUsageTokens;
+      // 优先使用 Claude Code 提供的实时 tokens_used，如果没有则回退到 transcript 解析
+      let contextUsageValue = 0;
       let contextSizeValue = contextSize;
 
       if (stdinData?.context_window) {
         const cw = stdinData.context_window;
         contextSizeValue = cw.context_window_size || contextSize;
+        // 关键点：优先取这里，这是最实时的
+        contextUsageValue = cw.tokens_used || contextUsageTokens || 0;
+      } else {
+        contextUsageValue = contextUsageTokens || 0;
       }
 
       const context = {
@@ -634,66 +638,85 @@ program
       // ignore errors
     }
 
-    // 进度条渲染函数
-    function getBarColor(p) {
-      if (p >= 85) return chalk.red;
-      if (p >= 60) return chalk.yellow;
-      return chalk.green;
-    }
-    const coloredBar = (percent, width = 10) => {
-      const filled = Math.round((percent / 100) * width);
-      const empty = width - filled;
-      const barColor = getBarColor(percent);
-      return barColor('█'.repeat(filled) + '\x1b[2m' + '░'.repeat(empty) + '\x1b[0m');
-    };
+    const blocks = [];
 
-    // 简化输出：目录 | git分支 | 使用量(进度条) | 倒计时
-    const parts = [];
-    
-    // 目录
+    // 高对比度徽章配色，纯 Powerline 渲染
     if (currentDir) {
-      parts.push(`${chalk.cyan(currentDir)}`);
+      blocks.push({ text: ` ${currentDir} `, bg: '#1D4ED8' }); // 皇家蓝
     }
     
-    // Git 分支
+    const useNerdFonts = !process.env.MINIMAX_PLAIN_UI && !process.env.NO_NERD_FONTS;
+    const arrow = useNerdFonts ? '\uE0B0' : '>';
+    const branchIcon = useNerdFonts ? '\uE0A0' : '*';
+
     if (gitBranch && gitBranch.name) {
-      const isMainBranch = gitBranch.name === 'main' || gitBranch.name === 'master';
-      const branchColor = isMainBranch ? chalk.green : chalk.white;
-      let branchStr = branchColor(gitBranch.name);
+      let branchStr = gitBranch.name;
+      if (branchStr.length > 20) branchStr = branchStr.substring(0, 10) + '…' + branchStr.substring(branchStr.length - 7);
       if (gitBranch.hasChanges) {
-        branchStr += chalk.red(' *');
+        branchStr += ' *';
       }
-      parts.push(branchStr);
+      blocks.push({ text: ` ${branchIcon} ${branchStr} `, bg: '#7E22CE' }); // 紫色回归
     }
     
-    // 使用量 - 进度条风格 (显示次数)
-    const usageBar = coloredBar(usage.percentage);
-    const usageColor = usage.percentage >= 85 ? chalk.red : usage.percentage >= 60 ? chalk.yellow : chalk.green;
-    let usageLine = `${usageBar} ${usageColor(usage.percentage + '%')} (${usage.remaining}/${usage.total})`;
-    // 周用量紧跟在 usage 后面
-    if (weekly) {
-      if (weekly.unlimited) {
-        usageLine += ` ${chalk.gray('·')} ${chalk.blue('W')} ♾️`;
-      } else {
-        const weeklyColor = weekly.percentage >= 85 ? chalk.red : weekly.percentage >= 60 ? chalk.yellow : chalk.green;
-        usageLine += ` ${chalk.gray('·')} ${chalk.blue('W')} ${weeklyColor(weekly.percentage + '%')}`;
+    if (usage && usage.total > 0) {
+      let bg = '#065F46'; // 回归稳健的深翠绿 (Emerald 800)
+      if (usage.percentage >= 95) bg = '#991B1B'; // danger (Red 800)
+      else if (usage.percentage >= 75) bg = '#9A3412'; // warn (Orange 800)
+
+      let usageText = ` ${usage.percentage}%  (${usage.remaining}/${usage.total}) `;
+      if (weekly) {
+        if (weekly.unlimited) {
+          usageText += `· W ∞ `;
+        } else {
+          usageText += `· W ${weekly.percentage}% `;
+        }
       }
+      blocks.push({ text: usageText, bg: bg });
     }
-    parts.push(usageLine);
     
-    // 倒计时
-    const remainingText = remaining.hours > 0 
-      ? `${remaining.hours}h${remaining.minutes}m` 
-      : `${remaining.minutes}m`;
-    parts.push(`${chalk.yellow('⏱')} ${remainingText}`);
+    if (remaining) {
+      const remainingText = remaining.hours > 0 
+        ? `${remaining.hours}h${remaining.minutes}m` 
+        : `${remaining.minutes}m`;
+      blocks.push({ text: ` ${remainingText} `, bg: '#92400E' });
+    }
     
-    // 到期
     if (expiry) {
-      const expiryColor = expiry.daysRemaining <= 3 ? chalk.red : expiry.daysRemaining <= 7 ? chalk.yellow : chalk.green;
-      parts.push(`${expiryColor('到期 ' + expiry.daysRemaining + '天')}`);
+      let bg = '#374151'; // Gray 700
+      if (expiry.daysRemaining <= 7) bg = '#9A3412';
+      if (expiry.daysRemaining <= 3) bg = '#991B1B';
+      blocks.push({ text: ` 剩${expiry.daysRemaining}天 `, bg: bg });
+    }
+
+    let out = '';
+    const leftArrow = useNerdFonts ? '\uE0B0' : '>';
+    
+    for (let i = 0; i < blocks.length; i++) {
+        const b = blocks[i];
+        
+        // 磁贴开启：顺行式起点，利用黑色箭头实现内凹镂空感
+        if (i === 0) {
+            out += '\u001b[0m' + chalk.bgHex(b.bg).black(leftArrow);
+        }
+        
+        // 磁贴文字内容
+        out += '\u001b[0m' + chalk.bgHex(b.bg).bold.whiteBright(b.text);
+        
+        if (i < blocks.length - 1) {
+            const nextB = blocks[i + 1];
+            if (useNerdFonts) {
+                // 衔接尖部
+                out += '\u001b[0m' + chalk.bgHex(nextB.bg).hex(b.bg)(arrow);
+            } else {
+                out += '\u001b[0m' + chalk.bgHex(b.bg).bold.whiteBright(arrow);
+            }
+        } else {
+            // 最后一块磁贴：顺行式终点
+            out += '\u001b[0m' + chalk.hex(b.bg)(arrow);
+        }
     }
     
-    console.log(parts.join(' │ '));
+    console.log(out);
   });
 
 // 模型上下文窗口大小（仅MiniMax模型）
