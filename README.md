@@ -277,6 +277,16 @@ minimax-status │ main * │ Usage █░░░░░░░░ 10% (4047/4500) 
 [● MiniMax-M2 27% • 3307/4500 • 1h26m ⚡
 ```
 
+## 截图演示
+
+### Claude Code 集成
+
+![Claude Code StatusBar](./images/claude%20code.png)
+
+### Droid 集成
+
+![Droid StatusBar](./images/droid.png)
+
 ## 命令说明
 
 | 命令                    | 描述                                        | 示例                        |
