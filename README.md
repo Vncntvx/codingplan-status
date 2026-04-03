@@ -102,6 +102,34 @@ cps status --watch
 | `cps auth <provider> <token>` | 设置供应商认证凭据 |
 | `cps config` | 查看当前配置 |
 
+### 配置管理
+
+| 命令 | 描述 |
+|------|------|
+| `cps config` | 查看当前配置和设置 |
+| `cps config-set <key> <value>` | 设置配置项 |
+| `cps config-get [key]` | 获取配置项值 |
+
+**支持的配置项：**
+
+| 配置项 | 说明 | 默认值 | 范围 |
+|--------|------|--------|------|
+| `cacheTTL` | 缓存有效期（毫秒） | 30000 | 5000-60000 |
+| `debug` | 调试模式 | false | true/false |
+
+**示例：**
+
+```bash
+# 设置缓存有效期为 20 秒
+cps config-set cacheTTL 20000
+
+# 开启调试模式
+cps config-set debug true
+
+# 查看缓存配置
+cps config-get cacheTTL
+```
+
 ### 状态查询
 
 | 命令 | 描述 |
@@ -110,6 +138,7 @@ cps status --watch
 | `cps status <provider>` | 显示指定供应商额度与用量 |
 | `cps status --compact` | 紧凑模式显示 |
 | `cps status --watch` | 实时监控模式 |
+| `cps status --force` | 强制刷新缓存 |
 | `cps list` | 显示当前供应商所有模型的额度与用量 |
 | `cps list <provider>` | 显示指定供应商所有模型的额度与用量 |
 | `cps bar` | 终端底部持续状态栏 |
@@ -120,6 +149,41 @@ cps status --watch
 |------|------|
 | `cps setup claude` | 配置 Claude Code 状态栏集成 |
 | `cps setup claude --remove` | 移除 Claude Code 状态栏集成 |
+
+## VS Code 扩展
+
+提供 VS Code 状态栏实时显示 Coding Plan 额度与用量。
+
+### 安装方式
+
+```bash
+# 进入扩展目录
+cd vscode-extension
+
+# 安装依赖
+bun install
+# 或 npm install
+
+# 编译打包
+npx vsce package
+
+# 生成的 .vsix 文件可在 VS Code 中安装
+# VS Code -> 扩展 -> ... -> 从 VSIX 安装
+```
+
+### 配置使用
+
+1. 点击左侧边栏的 CodingPlan 图标
+2. 点击「插件设置」
+3. 选择供应商并填写 API Key
+
+配置与 CLI 工具共享 `~/.codingplan-config.json`，配置一次即可同时用于 CLI 和 VS Code。
+
+### 功能特性
+
+- 状态栏显示供应商名称、用量百分比
+- 悬浮显示详细信息（5小时/周限额/月限额）、点击显示信息提示
+- 多供应商切换
 
 ## Claude Code 集成
 
@@ -228,13 +292,36 @@ cps status --watch
     "minimax": {
       "token": "xxx..."
     }
+  },
+  "settings": {
+    "cacheTTL": 30000,
+    "debug": false
   }
 }
 ```
 
+缓存数据存储在 `~/.codingplan-cache.json`。
+
+### 环境变量
+
+| 变量 | 说明 |
+|------|------|
+| `CPS_DEBUG` | 开启调试日志（`true`） |
+| `CPS_CACHE_TTL` | 覆盖缓存 TTL（毫秒） |
+
+**示例：**
+
+```bash
+# 开启调试模式
+export CPS_DEBUG=true
+
+# 覆盖缓存 TTL 为 20 秒
+export CPS_CACHE_TTL=20000
+```
+
 ### 安全说明
 
-凭据仅存储在本地，不会上传到任何服务器。
+凭据仅存储在本地，不会上传到任何服务器。配置文件权限自动设为 `0600`（仅所有者可读写）。
 
 ## 故障排除
 
@@ -266,6 +353,34 @@ cps auth infini <new_token>
 1. 运行 `cps setup claude` 重新配置
 2. 重启 Claude Code
 3. 手动测试: `cps-claudecode-statusline`
+
+### 调试模式
+
+开启调试模式查看详细日志：
+
+```bash
+# 方式一：环境变量
+CPS_DEBUG=true cps status
+
+# 方式二：配置设置
+cps config-set debug true
+cps status
+```
+
+调试模式会输出：
+- 缓存命中/未命中
+- API 请求详情
+- 错误详细信息
+
+### 清除缓存
+
+```bash
+# 删除缓存文件
+rm ~/.codingplan-cache.json
+
+# 或使用 --force 强制刷新
+cps status --force
+```
 
 ## 卸载
 
