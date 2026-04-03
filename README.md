@@ -2,18 +2,18 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Coding Plan 额度与用量监控工具，支持多供应商（MiniMax、Infini AI）。
+Coding Plan 额度与用量监控工具，支持多供应商（无问芯穹(Infini AI)、MiniMax）。
 
 ## 支持的供应商
 
 | 供应商 | 说明 |
 |--------|------|
-| **MiniMax** | MiniMax Token-Plan 编程套餐 |
 | **Infini AI** | GenStudio Infini 编码套餐 |
+| **MiniMax** | MiniMax Token-Plan 编程套餐 |
 
 ## 特性
 
-- ✅ **多供应商支持**: 支持 MiniMax、Infini AI 等多个 Coding Plan 供应商
+- ✅ **多供应商支持**: 支持 Infini AI、MiniMax 等多个 Coding Plan 供应商
 - ✅ **实时状态监控**: 显示使用额度、剩余次数、重置时间
 - ✅ **多种显示模式**: 详细模式、紧凑模式、持续状态栏
 - ✅ **Claude Code 集成**: 可在 Claude Code 底部状态栏显示
@@ -25,9 +25,13 @@ Coding Plan 额度与用量监控工具，支持多供应商（MiniMax、Infini 
 ### 方式一：从 Git 仓库安装（推荐）
 
 ```bash
-# 全局安装
+# 使用 bun（推荐）
 bun add -g github:Vncntvx/codingplan-status
-# 或者指定分支/标签
+
+# 或使用 npm
+npm install -g github:Vncntvx/codingplan-status
+
+# 指定分支/标签
 bun add -g github:Vncntvx/codingplan-status#main
 ```
 
@@ -40,9 +44,11 @@ cd codingplan-status
 
 # 安装依赖
 bun install
+# 或 npm install
 
 # 全局链接
 bun link
+# 或 npm link
 ```
 
 安装完成后，`cps` 命令将全局可用。
@@ -52,25 +58,25 @@ bun link
 ### 1. 配置认证
 
 ```bash
-# 配置 MiniMax
-cps auth minimax <token>
-
-# 或配置 Infini AI
+# 配置 Infini AI
 cps auth infini sk-cp-xxxxx
+
+# 或配置 MiniMax
+cps auth minimax <token>
 ```
 
 获取令牌:
+
+**Infini AI:**
+
+1. 访问 [Infini Coding Plan 页面](https://cloud.infini-ai.com/genstudio/code)
+2. 登录并获取 API Key (以 `sk-cp-` 开头)
 
 **MiniMax:**
 
 1. 访问 [MiniMax 开放平台](https://platform.minimaxi.com/user-center/payment/coding-plan)
 2. 登录并进入控制台
 3. Coding Plan 中创建或获取 API Key
-
-**Infini AI:**
-
-1. 访问 [Infini Coding Plan 页面](https://cloud.infini-ai.com/genstudio/code)
-2. 登录并获取 API Key (以 `sk-cp-` 开头)
 
 ### 2. 查看状态
 
@@ -113,9 +119,7 @@ cps status --watch
 | 命令 | 描述 |
 |------|------|
 | `cps setup claude` | 配置 Claude Code 状态栏集成 |
-| `cps setup droid` | 配置 Droid 状态栏集成 |
 | `cps setup claude --remove` | 移除 Claude Code 状态栏集成 |
-| `cps setup droid --remove` | 移除 Droid 状态栏集成 |
 
 ## Claude Code 集成
 
@@ -126,15 +130,16 @@ cps status --watch
 1. **安装工具**:
 
    ```bash
-   bun add -g github:<username>/codingplan-status
+   bun add -g github:Vncntvx/codingplan-status
+   # 或 npm install -g github:Vncntvx/codingplan-status
    ```
 
 2. **配置认证**:
 
    ```bash
-   cps auth minimax <token>
-   # 或
    cps auth infini sk-cp-xxxxx
+   # 或
+   cps auth minimax <token>
    ```
 
 3. **自动配置**:
@@ -148,50 +153,12 @@ cps status --watch
 集成成功后，底部状态栏将显示:
 
 ```text
-my-app ❯ main * ❯ MiniMax-M2 ❯ 60% (2700/4500) ❯ 1h20m ❯ 剩5天
+ 5h   60% ██████░░░░      7d   30% ███░░░░░░░
 ```
-
-## Droid 集成
-
-将额度与用量显示在 Droid 底部状态栏。
-
-### 配置步骤
-
-1. **安装工具**
-
-2. **自动配置**:
-
-   ```bash
-   cps setup droid
-   ```
-
-3. **重启 Droid**
 
 ## 显示示例
 
 ### 详细模式
-
-**MiniMax:**
-
-```text
-┌──────────────────────────────────────────────────────┐
-│ MiniMax 额度与用量                                   │
-│                                                      │
-│ 模型  : MiniMax-M2                                   │
-│ 时间窗: 20:00-00:00 (UTC+8)                          │
-│ 重置  : 1 小时 42 分钟后重置                         │
-│                                                      │
-│ 5小时 : █░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 6% (266/4500) │
-│ 剩余  : 4234/4500 次                                 │
-│                                                      │
-│ 周限额: █░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 6% (357/6000) │
-│ 周重置: 6 天后重置                                   │
-│                                                      │
-│ 到期  : 02/26/2026 (还剩 6 天)                       │
-│                                                      │
-│ 状态  : ✓ 正常使用                                   │
-└──────────────────────────────────────────────────────┘
-```
 
 **Infini AI:**
 
@@ -207,6 +174,27 @@ my-app ❯ main * ❯ MiniMax-M2 ❯ 60% (2700/4500) ❯ 1h20m ❯ 剩5天
 │                                                        │
 │ 状态  : ✓ 正常使用                                    │
 └────────────────────────────────────────────────────────┘
+```
+
+**MiniMax:**
+
+```text
+┌──────────────────────────────────────────────────────┐
+│ MiniMax 额度与用量                                   │
+│                                                      │
+│ 模型  : MiniMax-M2                                   │
+│ 时间窗: 20:00-00:00 (UTC+8)                          │
+│ 重置  : 1 小时 42 分钟后重置                         │
+│                                                      │
+│ 5小时 : █░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 6% (266/4500) │
+│ 剩余  : 4234/4500 次                                 │
+│                                                      │
+│ 周限额: █░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 6% (357/6000) │
+│                                                      │
+│ 到期  : 02/26/2026 (还剩 6 天)                       │
+│                                                      │
+│ 状态  : ✓ 正常使用                                   │
+└──────────────────────────────────────────────────────┘
 ```
 
 ### 紧凑模式
@@ -232,13 +220,13 @@ my-app ❯ main * ❯ MiniMax-M2 ❯ 60% (2700/4500) ❯ 1h20m ❯ 剩5天
 ```json
 {
   "version": 1,
-  "currentProvider": "minimax",
+  "currentProvider": "infini",
   "providers": {
-    "minimax": {
-      "token": "xxx..."
-    },
     "infini": {
       "token": "sk-cp-xxx..."
+    },
+    "minimax": {
+      "token": "xxx..."
     }
   }
 }
@@ -254,11 +242,13 @@ my-app ❯ main * ❯ MiniMax-M2 ❯ 60% (2700/4500) ❯ 1h20m ❯ 剩5天
 
 ```bash
 # 方式一：重新从 Git 安装
-bun add -g github:<username>/codingplan-status
+bun add -g github:Vncntvx/codingplan-status
+# 或 npm install -g github:Vncntvx/codingplan-status
 
-# 方式二：本地安装时确保执行了 bun link
+# 方式二：本地安装时确保执行了 link
 cd codingplan-status
 bun link
+# 或 npm link
 ```
 
 ### 认证失败
@@ -268,7 +258,7 @@ bun link
 cps status
 
 # 重新设置认证
-cps auth minimax <new_token>
+cps auth infini <new_token>
 ```
 
 ### 状态栏不显示
@@ -282,9 +272,11 @@ cps auth minimax <new_token>
 ```bash
 # 从 Git 安装的卸载
 bun remove -g codingplan-status
+# 或 npm uninstall -g codingplan-status
 
 # 本地安装的卸载
 bun unlink
+# 或 npm unlink -g codingplan-status
 rm -rf codingplan-status
 rm ~/.codingplan-config.json
 ```
@@ -301,8 +293,8 @@ MIT License - 详见 [LICENSE](LICENSE) 文件
 
 ## 相关链接
 
-- [MiniMax 开放平台](https://platform.minimaxi.com/)
 - [Infini AI](https://cloud.infini-ai.com/)
+- [MiniMax 开放平台](https://platform.minimaxi.com/)
 
 ---
 

@@ -30,11 +30,6 @@ class BaseProvider {
 
   constructor(config) {
     this.config = config || {};
-    this.cache = {
-      data: null,
-      timestamp: 0,
-    };
-    this.cacheTimeout = 8000; // 8秒缓存
   }
 
   /**
@@ -53,7 +48,7 @@ class BaseProvider {
 
   /**
    * 获取原始使用量数据
-   * @param {boolean} forceRefresh - 强制刷新缓存
+   * @param {boolean} forceRefresh - 强制刷新缓存（已弃用，缓存由 UsageFetcher 统一管理）
    * @returns {Promise<Object>} 供应商原始响应
    */
   async fetchUsageData(forceRefresh = false) {
@@ -67,26 +62,6 @@ class BaseProvider {
    */
   parseUsageData(rawData) {
     throw new Error('Must implement parseUsageData');
-  }
-
-  /**
-   * 获取使用量状态（带缓存）
-   * @param {boolean} forceRefresh
-   * @returns {Promise<NormalizedUsageData>}
-   */
-  async getUsageStatus(forceRefresh = false) {
-    const now = Date.now();
-    if (!forceRefresh && this.cache.data && now - this.cache.timestamp < this.cacheTimeout) {
-      return this.cache.data;
-    }
-
-    const rawData = await this.fetchUsageData(forceRefresh);
-    const normalizedData = this.parseUsageData(rawData);
-
-    this.cache.data = normalizedData;
-    this.cache.timestamp = now;
-
-    return normalizedData;
   }
 
   /**
@@ -114,18 +89,54 @@ class BaseProvider {
   }
 
   /**
-   * 清除缓存
-   */
-  clearCache() {
-    this.cache = { data: null, timestamp: 0 };
-  }
-
-  /**
    * 测试连接是否正常
    * @returns {Promise<{success: boolean, message: string}>}
    */
   async testConnection() {
     throw new Error('Must implement testConnection');
+  }
+
+  /**
+   * 通用的 API 错误处理
+   * @param {Error} error
+   */
+  handleApiError(error) {
+    // HTTP 状态码错误
+    if (error.response) {
+      const status = error.response.status;
+      const statusText = error.response.statusText || '';
+
+      switch (status) {
+        case 400:
+          throw new Error(`Bad request: ${statusText}. Please check your parameters.`);
+        case 401:
+          throw new Error('Invalid credentials. Please check your API token/key.');
+        case 403:
+          throw new Error('Access forbidden. Your account may be suspended or restricted.');
+        case 404:
+          throw new Error('API endpoint not found. The service may have changed.');
+        case 429:
+          throw new Error('Rate limit exceeded. Please wait a moment and try again.');
+        case 500:
+        case 502:
+        case 503:
+        case 504:
+          throw new Error(`Server error (${status}). The service is temporarily unavailable.`);
+        default:
+          throw new Error(`API error (${status}): ${statusText || error.message}`);
+      }
+    }
+
+    // 网络错误
+    if (error.code === 'ECONNABORTED') {
+      throw new Error('Request timeout. Please check your network connection.');
+    }
+    if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+      throw new Error('Network error. Please check your internet connection.');
+    }
+
+    // 其他错误
+    throw new Error(`Request failed: ${error.message}`);
   }
 
   /**

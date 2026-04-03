@@ -8,6 +8,7 @@ const chalk = require("chalk").default;
 const ora = require("ora").default;
 const StatusBar = require("./status");
 const { getConfigManager } = require("./config-manager");
+const { getUsageFetcher } = require("./usage-fetcher");
 const { listProviders, createProvider, hasProvider } = require("./providers");
 const packageJson = require("../package.json");
 
@@ -123,6 +124,7 @@ program
   .action(() => {
     const current = configManager.getCurrentProviderId();
     const configured = configManager.listConfiguredProviders();
+    const settings = configManager.config.settings || {};
 
     console.log(chalk.bold("\n当前配置:\n"));
     console.log(`配置文件: ${chalk.gray(configManager.getConfigPath())}`);
@@ -138,7 +140,55 @@ program
         console.log(`  ${isCurrent ? chalk.green("●") : "○"} ${id}: ${Object.keys(creds).join(", ")}`);
       }
     }
+
+    console.log(chalk.bold("\n设置:"));
+    console.log(`  缓存 TTL: ${settings.cacheTTL || 30000} ms`);
+    console.log(`  调试模式: ${settings.debug ? chalk.green("开启") : chalk.gray("关闭")}`);
     console.log();
+  });
+
+// 配置管理子命令
+program
+  .command("config-set <key> <value>")
+  .description("设置配置项")
+  .action((key, value) => {
+    const validKeys = ['cacheTTL', 'debug'];
+    if (!validKeys.includes(key)) {
+      console.log(chalk.red(`错误: 未知的配置项 "${key}"`));
+      console.log(chalk.gray(`支持的配置项: ${validKeys.join(', ')}`));
+      process.exit(1);
+    }
+
+    let parsedValue;
+    if (key === 'cacheTTL') {
+      parsedValue = parseInt(value, 10);
+      if (isNaN(parsedValue) || parsedValue < 5000 || parsedValue > 60000) {
+        console.log(chalk.red("错误: cacheTTL 必须是 5000-60000 之间的整数（毫秒）"));
+        process.exit(1);
+      }
+    } else if (key === 'debug') {
+      parsedValue = value === 'true' || value === '1';
+    }
+
+    configManager.updateSetting(key, parsedValue);
+    console.log(chalk.green(`✓ 已设置 ${key} = ${parsedValue}`));
+  });
+
+program
+  .command("config-get [key]")
+  .description("获取配置项")
+  .action((key) => {
+    const settings = configManager.config.settings || {};
+
+    if (key) {
+      const value = settings[key];
+      console.log(value !== undefined ? value : chalk.gray("(未设置)"));
+    } else {
+      console.log(chalk.bold("\n配置项:"));
+      console.log(`  cacheTTL: ${settings.cacheTTL || 30000} ms`);
+      console.log(`  debug: ${settings.debug || false}`);
+      console.log();
+    }
   });
 
 // 状态查询命令
@@ -157,11 +207,14 @@ program
   .description("显示额度与用量，可指定供应商")
   .option("-c, --compact", "紧凑模式显示")
   .option("-w, --watch", "实时监控模式")
+  .option("-f, --force", "强制刷新缓存")
   .action(async (providerId, options) => {
     const spinner = ora("获取额度与用量中...").start();
 
     try {
-      let provider;
+      const usageFetcher = getUsageFetcher();
+
+      // 验证供应商
       if (providerId) {
         if (!hasProvider(providerId)) {
           spinner.fail(chalk.red(`未知供应商 "${providerId}"`));
@@ -174,47 +227,32 @@ program
           console.log(chalk.gray(`运行 \"cps auth ${providerId} <token>\" 进行配置`));
           process.exit(1);
         }
-        const credentials = configManager.getProviderCredentials(providerId);
-        provider = createProvider(providerId, credentials);
-      } else {
-        provider = getCurrentProvider();
       }
 
-      const apiData = await provider.fetchUsageData();
+      const usageData = await usageFetcher.fetch({
+        forceRefresh: options.force,
+        providerId: providerId
+      });
 
-      let usageData;
-      if (provider.constructor.id === 'minimax') {
-        const subscriptionData = await provider.getSubscriptionDetails();
-        usageData = provider.parseWithExpiry(apiData, subscriptionData);
-
-        try {
-          const usageStats = await provider.getUsageStats();
-          if (usageStats) {
-            usageData.usageStats = usageStats;
-          }
-        } catch (e) {
-          // 忽略统计获取失败
-        }
-      } else {
-        usageData = provider.parseUsageData(apiData);
+      if (!usageData) {
+        spinner.fail(chalk.red("获取状态失败"));
+        console.log(chalk.gray("请检查网络连接或 API 凭据"));
+        process.exit(1);
       }
-
-      const allModels = provider.parseAllModels ? provider.parseAllModels(apiData) : [];
 
       spinner.succeed("状态获取成功");
 
-      const statusBar = new StatusBar(usageData, usageData.usageStats || null, provider, allModels);
+      const statusBar = new StatusBar(usageData, usageData.usageStats || null, null, []);
 
       if (options.compact) {
         console.log(statusBar.renderCompact());
       } else {
-        const statusBarWithModels = new StatusBar(usageData, usageData.usageStats || null, provider, allModels);
-        console.log("\n" + statusBarWithModels.render() + "\n");
+        console.log("\n" + statusBar.render() + "\n");
       }
 
       if (options.watch) {
         console.log(chalk.gray("监控中，按 Ctrl+C 退出"));
-        startWatching(provider, statusBar);
+        startWatching(providerId);
       }
     } catch (error) {
       spinner.fail(chalk.red("获取状态失败"));
@@ -230,7 +268,9 @@ program
     const spinner = ora("获取额度与用量中...").start();
 
     try {
-      let provider;
+      const usageFetcher = getUsageFetcher();
+
+      // 验证供应商
       if (providerId) {
         if (!hasProvider(providerId)) {
           spinner.fail(chalk.red(`未知供应商 "${providerId}"`));
@@ -243,27 +283,18 @@ program
           console.log(chalk.gray(`运行 \"cps auth ${providerId} <token>\" 进行配置`));
           process.exit(1);
         }
-        const credentials = configManager.getProviderCredentials(providerId);
-        provider = createProvider(providerId, credentials);
-      } else {
-        provider = getCurrentProvider();
       }
 
-      const apiData = await provider.fetchUsageData();
+      const usageData = await usageFetcher.fetch({ providerId });
 
-      let usageData;
-      if (provider.constructor.id === 'minimax') {
-        const subscriptionData = await provider.getSubscriptionDetails();
-        usageData = provider.parseWithExpiry(apiData, subscriptionData);
-      } else {
-        usageData = provider.parseUsageData(apiData);
+      if (!usageData) {
+        spinner.fail(chalk.red("获取状态失败"));
+        process.exit(1);
       }
-
-      const allModels = provider.parseAllModels ? provider.parseAllModels(apiData) : [];
 
       spinner.succeed("状态获取成功");
-      const statusBarWithModels = new StatusBar(usageData, null, null, allModels);
-      console.log("\n" + statusBarWithModels.render() + "\n");
+      const statusBar = new StatusBar(usageData, null, null, usageData.allModels || []);
+      console.log("\n" + statusBar.render() + "\n");
     } catch (error) {
       spinner.fail(chalk.red("获取状态失败"));
       console.error(chalk.red(`错误: ${error.message}`));
@@ -282,61 +313,14 @@ program
 
 program
   .command("setup <target>")
-  .description("配置状态栏集成 (claude | droid)")
+  .description("配置状态栏集成 (claude)")
   .option("-r, --remove", "移除状态栏集成")
   .action((target, options) => {
     const fs = require("fs");
     const path = require("path");
     const os = require("os");
 
-    if (target === "droid") {
-      const factoryDir = path.join(os.homedir(), ".factory");
-      const settingsPath = path.join(factoryDir, "settings.json");
-
-      if (options.remove) {
-        if (!fs.existsSync(settingsPath)) {
-          console.log(chalk.yellow("Droid 配置文件不存在，无需移除"));
-          return;
-        }
-
-        try {
-          const settings = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
-          if (settings.statusLine && settings.statusLine.command === "cps-droid-statusline") {
-            delete settings.statusLine;
-            fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
-            console.log(chalk.green("✓ Droid 状态栏集成已移除"));
-            console.log(chalk.gray(`  配置文件: ${settingsPath}`));
-          } else {
-            console.log(chalk.yellow("Droid 状态栏集成未配置或使用其他命令"));
-          }
-        } catch (e) {
-          console.log(chalk.red(`读取配置文件失败: ${e.message}`));
-        }
-      } else {
-        if (!fs.existsSync(factoryDir)) {
-          fs.mkdirSync(factoryDir, { recursive: true });
-        }
-
-        let settings = {};
-        if (fs.existsSync(settingsPath)) {
-          try {
-            settings = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
-          } catch (e) {
-            settings = {};
-          }
-        }
-
-        settings.statusLine = {
-          type: "command",
-          command: "cps-droid-statusline"
-        };
-
-        fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
-        console.log(chalk.green("✓ Droid 状态栏集成已配置"));
-        console.log(chalk.gray(`  配置文件: ${settingsPath}`));
-        console.log(chalk.gray("  重启 Droid 后生效"));
-      }
-    } else if (target === "claude") {
+    if (target === "claude") {
       const claudeDir = path.join(os.homedir(), ".claude");
       const settingsPath = path.join(claudeDir, "settings.json");
       const wrapperPath = path.join(claudeDir, "cps-wrapper.js");
@@ -414,6 +398,8 @@ const { execSync } = require('child_process');
 const path = require('path');
 const os = require('os');
 
+const DEBUG = process.env.CPS_DEBUG;
+
 let input = '';
 try {
   input = fs.readFileSync(0, 'utf-8');
@@ -423,22 +409,36 @@ try {
 const originalCmdPath = path.join(os.homedir(), '.claude', 'cps-hud-cmd.json');
 if (fs.existsSync(originalCmdPath)) {
   try {
-    const originalCmd = JSON.parse(fs.readFileSync(originalCmdPath, 'utf8')).command;
-    if (originalCmd) {
-      const hudOut = execSync(originalCmd, { input, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] });
+    const cmdData = JSON.parse(fs.readFileSync(originalCmdPath, 'utf8'));
+    if (cmdData.command) {
+      const hudOut = execSync(cmdData.command, {
+        input,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'ignore'],
+        timeout: 5000
+      });
       if (hudOut) {
-         process.stdout.write(hudOut);
-         if (!hudOut.endsWith('\\n')) process.stdout.write('\\n');
+        process.stdout.write(hudOut);
+        if (!hudOut.endsWith('\\n')) process.stdout.write('\\n');
       }
     }
-  } catch(e) {}
+  } catch(e) {
+    if (DEBUG) console.error('[cps-wrapper] HUD command failed:', e.message);
+  }
 }
 
 // 追加额度提示
 try {
-  const cpsOut = execSync('cps-claudecode-statusline', { input, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] });
+  const cpsOut = execSync('cps-claudecode-statusline', {
+    input,
+    encoding: 'utf-8',
+    stdio: ['pipe', 'pipe', 'ignore'],
+    timeout: 5000
+  });
   if (cpsOut) process.stdout.write(cpsOut);
-} catch(e) {}
+} catch(e) {
+  if (DEBUG) console.error('[cps-wrapper] Status line failed:', e.message);
+}
 `;
         fs.writeFileSync(wrapperPath, wrapperContent, { mode: 0o755 });
 
@@ -454,31 +454,29 @@ try {
       }
     } else {
       console.log(chalk.red(`错误: 未知集成目标 "${target}"`));
-      console.log(chalk.gray("支持: claude, droid"));
+      console.log(chalk.gray("支持: claude"));
       process.exit(1);
     }
   });
 
-function startWatching(provider, statusBar) {
+function startWatching(providerId) {
   let intervalId;
 
   const update = async () => {
     try {
-      const apiData = await provider.fetchUsageData();
+      const usageFetcher = getUsageFetcher();
+      const usageData = await usageFetcher.fetch({ forceRefresh: true, providerId });
 
-      let usageData;
-      if (provider.constructor.id === 'minimax') {
-        const subscriptionData = await provider.getSubscriptionDetails();
-        usageData = provider.parseWithExpiry(apiData, subscriptionData);
-      } else {
-        usageData = provider.parseUsageData(apiData);
+      if (!usageData) {
+        console.error(chalk.red("更新失败: 无法获取数据"));
+        return;
       }
 
-      const newStatusBar = new StatusBar(usageData);
+      const statusBar = new StatusBar(usageData);
 
       process.stdout.write("\x1Bc");
 
-      console.log("\n" + newStatusBar.render() + "\n");
+      console.log("\n" + statusBar.render() + "\n");
       console.log(chalk.gray(`最后更新: ${new Date().toLocaleTimeString()}`));
     } catch (error) {
       console.error(chalk.red(`更新失败: ${error.message}`));

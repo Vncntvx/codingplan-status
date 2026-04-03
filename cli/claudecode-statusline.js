@@ -1,44 +1,36 @@
 #!/usr/bin/env node
 
 // Force color output even in non-TTY environments
-process.env.FORCE_COLOR = "1";
+process.env.FORCE_COLOR = '1';
 
-const { getConfigManager } = require("./config-manager");
-const { createProvider } = require("./providers");
-const PromptStatus = require("./prompts");
-
-const configManager = getConfigManager();
+const { getConfigManager } = require('./config-manager');
+const { getUsageFetcher } = require('./usage-fetcher');
+const { renderCompact } = require('./renderers');
 
 async function main() {
-  try {
-    const providerId = configManager.getCurrentProviderId();
-    if (!providerId) {
-      console.log("❌ 未配置供应商");
-      process.exit(1);
+  const configManager = getConfigManager();
+  const usageFetcher = getUsageFetcher();
+
+  // 1. 检查是否已配置
+  const providerId = configManager.getCurrentProviderId();
+  if (!providerId) {
+    const usageFetcher = getUsageFetcher();
+    const cache = usageFetcher.getCacheStatus();
+    if (!cache.hasData) {
+      console.log('⚠ 请先配置: cps auth <provider> <token>');
     }
-    const credentials = configManager.getProviderCredentials(providerId);
-    if (!credentials) {
-      console.log("❌ 未找到供应商凭据");
-      process.exit(1);
-    }
+    process.exit(0);
+  }
 
-    const provider = createProvider(providerId, credentials);
-    const apiData = await provider.fetchUsageData();
+  // 2. 获取用量数据（带缓存）
+  const usageData = await usageFetcher.fetch();
 
-    let usageData;
-    if (provider.constructor.id === 'minimax') {
-      const subscriptionData = await provider.getSubscriptionDetails();
-      usageData = provider.parseWithExpiry(apiData, subscriptionData);
-    } else {
-      usageData = provider.parseUsageData(apiData);
-    }
-
-    const promptStatus = new PromptStatus();
-    console.log(promptStatus.renderCompact(usageData));
-
-  } catch (error) {
+  // 3. 渲染输出
+  if (usageData) {
+    console.log(renderCompact(usageData));
+  } else {
     console.log('');
   }
 }
 
-main();
+main().catch(() => process.exit(0));

@@ -6,8 +6,7 @@
   "bin": {
     "cps": "./cli/index.js",
     "cps-prompt": "./cli/prompts.js",
-    "cps-claudecode-statusline": "./cli/claudecode-statusline.js",
-    "cps-droid-statusline": "./cli/droid-statusline.js"
+    "cps-claudecode-statusline": "./cli/claudecode-statusline.js"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"

@@ -2,6 +2,7 @@ const chalk = require('chalk').default;
 const dayjs = require('dayjs');
 const { default: boxen } = require('boxen');
 const { default: stringWidth } = require('string-width');
+const { renderCompact: renderCompactBar } = require('./renderers');
 
 const LAYOUT = {
   PROGRESS_BAR_WIDTH: 30,
@@ -241,40 +242,7 @@ class StatusBar {
   }
 
   renderCompact() {
-    const { shortTerm, weekly } = this.data;
-    const pct5h = shortTerm ? (shortTerm.percentage || 0) : 0;
-    const pct7d = weekly ? (weekly.percentage || 0) : 0;
-
-    const getBarColor = (percent, is5h) => {
-      // Muted color palette for better visual harmony with claude-hud
-      const p = percent;
-      if (is5h) {
-        if (p >= 85) return chalk.hex('#991B1B'); // muted red
-        if (p >= 60) return chalk.hex('#B45309'); // muted amber
-      } else {
-        if (p >= 90) return chalk.hex('#991B1B');
-        if (p >= 75) return chalk.hex('#B45309');
-      }
-      return chalk.hex('#065F46'); // muted green
-    };
-
-    const renderBar = (percent, is5h) => {
-      const length = 10;
-      const p = Math.max(0, Math.min(100, Math.round(percent)));
-      const filled = Math.round((p / 100) * length);
-      const empty = length - filled;
-      
-      const colorFn = getBarColor(percent, is5h);
-      return colorFn('█'.repeat(filled)) + chalk.dim('░'.repeat(empty));
-    };
-
-    const text5h = `${chalk.dim('5h')} ${pct5h.toString().padStart(2, ' ')}% ${renderBar(pct5h, true)}`;
-
-    if (weekly) {
-      const text7d = `${chalk.dim('7d')} ${pct7d.toString().padStart(2, ' ')}% ${renderBar(pct7d, false)}`;
-      return ` ${text5h}      ${text7d}`;
-    }
-    return ` ${text5h}`;
+    return renderCompactBar(this.data);
   }
 }
 

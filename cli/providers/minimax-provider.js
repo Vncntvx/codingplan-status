@@ -154,14 +154,28 @@ class MinimaxProvider extends BaseProvider {
   }
 
   handleApiError(error) {
-    if (error.response?.status === 401) {
-      throw new Error('Invalid token or unauthorized. Please check your credentials.');
-    } else if (error.code === 'ECONNABORTED') {
-      throw new Error('Request timeout. Please check your network connection.');
-    } else if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
-      throw new Error('Network error. Please check your internet connection.');
+    // MiniMax 特定的错误消息
+    if (error.response) {
+      const status = error.response.status;
+      switch (status) {
+        case 400:
+          throw new Error('Invalid request to MiniMax API.');
+        case 401:
+          throw new Error('Invalid MiniMax token. Please run "cps auth minimax <token>" to update.');
+        case 403:
+          throw new Error('MiniMax access denied. Your account may be restricted.');
+        case 429:
+          throw new Error('MiniMax rate limit exceeded. Please wait before retrying.');
+        case 500:
+        case 502:
+        case 503:
+        case 504:
+          throw new Error('MiniMax service is temporarily unavailable. Please try again later.');
+      }
     }
-    throw new Error(`API request failed: ${error.message}`);
+
+    // 调用父类处理通用错误
+    super.handleApiError(error);
   }
 
   parseUsageData(apiData) {
