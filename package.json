@@ -4,7 +4,10 @@
   "description": "Coding Plan 额度与用量监控工具",
   "private": true,
   "bin": {
-    "cps": "./cli/index.js"
+    "cps": "./cli/index.js",
+    "cps-prompt": "./cli/prompts.js",
+    "cps-claudecode-statusline": "./cli/claudecode-statusline.js",
+    "cps-droid-statusline": "./cli/droid-statusline.js"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"

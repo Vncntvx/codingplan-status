@@ -5,34 +5,23 @@ const chalk = require('chalk').default;
 class Renderer {
   constructor() {
     this.RESET = '\x1b[0m';
-    // 自动检测：如果环境变量设置了 MINIMAX_PLAIN_UI 或者是 NO_NERD_FONTS，则停用特殊图标
     this.useNerdFonts = !process.env.MINIMAX_PLAIN_UI && !process.env.NO_NERD_FONTS;
-    
-    // 图标配置
     this.icons = {
       arrow: this.useNerdFonts ? '\uE0B0' : '>',
-      leftArrow: this.useNerdFonts ? '\uE0B0' : '>', // 改为顺向箭头，实现顺行感
+      leftArrow: this.useNerdFonts ? '\uE0B0' : '>',
       branch: this.useNerdFonts ? '\uE0A0' : '*'
     };
   }
 
   formatTokens(tokens) {
-    if (tokens >= 1000000) {
-      return `${(tokens / 1000000).toFixed(1)}M`;
-    }
-    if (tokens >= 1000) {
-      return `${(tokens / 1000).toFixed(1)}k`;
-    }
+    if (tokens >= 1000000) return `${(tokens / 1000000).toFixed(1)}M`;
+    if (tokens >= 1000) return `${(tokens / 1000).toFixed(1)}k`;
     return tokens.toString();
   }
 
   formatContextSize(size) {
-    if (size >= 1000000) {
-      return `${Math.round(size / 100000) / 10}M`;
-    }
-    if (size >= 1000) {
-      return `${Math.round(size / 1000)}K`;
-    }
+    if (size >= 1000000) return `${Math.round(size / 100000) / 10}M`;
+    if (size >= 1000) return `${Math.round(size / 1000)}K`;
     return `${size}`;
   }
 
@@ -75,7 +64,6 @@ class Renderer {
 
     const blocks = [];
 
-    // Pure Powerline Data Blocks
     if (currentDir) {
       blocks.push({ text: ` ${currentDir} `, bg: '#2563EB', fg: '#FFFFFF' });
     }
@@ -101,13 +89,12 @@ class Renderer {
     }
 
     if (usage && usage.total > 0) {
-      let bg = '#065F46'; // safe (Emerald 800 - dark enough for white text)
-      if (usagePercentage >= 95) bg = '#991B1B'; // danger (Red 800)
-      else if (usagePercentage >= 75) bg = '#9A3412'; // warn (Orange 800)
+      let bg = '#065F46';
+      if (usagePercentage >= 95) bg = '#991B1B';
+      else if (usagePercentage >= 75) bg = '#9A3412';
 
-      // 使用已用/总额显示，确保与进度百分比（已用）一致
       let usageText = ` ${usagePercentage}%  (${usage.used}/${usage.total}) `;
-      
+
       if (weekly) {
         if (weekly.unlimited) {
           usageText += `· W ∞ `;
@@ -124,23 +111,20 @@ class Renderer {
     }
 
     if (expiry) {
-      let bg = '#374151'; // Gray 700
+      let bg = '#374151';
       if (expiry.daysRemaining <= 7) bg = '#9A3412';
       if (expiry.daysRemaining <= 3) bg = '#991B1B';
       blocks.push({ text: ` 剩${expiry.daysRemaining}天 `, bg: bg, fg: '#FFFFFF' });
     }
 
-    // Powerline arrow seamless integration
     let out = '';
     const arrow = this.icons.arrow;
-    
+
     for (let i = 0; i < blocks.length; i++) {
       const b = blocks[i];
-      // 顺行式起点：使用正向箭头 + 黑色前景色模拟内凹效果
       if (i === 0) {
         out += this.RESET + chalk.bgHex(b.bg).black(this.icons.leftArrow);
       }
-      // 磁贴文字
       out += chalk.bgHex(b.bg).whiteBright(b.text);
       if (i < blocks.length - 1) {
         const nextB = blocks[i + 1];
@@ -158,9 +142,7 @@ class Renderer {
   }
 
   renderToolsLine(tools) {
-    if (!tools || tools.length === 0) {
-      return null;
-    }
+    if (!tools || tools.length === 0) return null;
 
     const parts = [];
     const runningTools = tools.filter(t => t.status === 'running');
@@ -185,28 +167,19 @@ class Renderer {
       parts.push(`${chalk.green('✓')} ${name} ${chalk.green('×' + count)}`);
     }
 
-    if (parts.length === 0) {
-      return null;
-    }
-
+    if (parts.length === 0) return null;
     return parts.join(' | ');
   }
 
   renderAgentsLine(agents) {
-    if (!agents || agents.length === 0) {
-      return null;
-    }
+    if (!agents || agents.length === 0) return null;
 
     const runningAgents = agents.filter(a => a.status === 'running');
-    const recentCompleted = agents
-      .filter(a => a.status === 'completed')
-      .slice(-2);
+    const recentCompleted = agents.filter(a => a.status === 'completed').slice(-2);
 
     const toShow = [...runningAgents, ...recentCompleted].slice(-3);
 
-    if (toShow.length === 0) {
-      return null;
-    }
+    if (toShow.length === 0) return null;
 
     const lines = [];
     for (const agent of toShow) {
@@ -227,9 +200,7 @@ class Renderer {
   }
 
   renderTodosLine(todos) {
-    if (!todos || todos.length === 0) {
-      return null;
-    }
+    if (!todos || todos.length === 0) return null;
 
     const inProgress = todos.find(t => t.status === 'in_progress');
     const completed = todos.filter(t => t.status === 'completed').length;
@@ -252,24 +223,16 @@ class Renderer {
     const lines = [];
 
     const sessionLine = this.renderSessionLine(context);
-    if (sessionLine) {
-      lines.push(sessionLine);
-    }
+    if (sessionLine) lines.push(sessionLine);
 
     const toolsLine = this.renderToolsLine(context.tools);
-    if (toolsLine) {
-      lines.push(toolsLine);
-    }
+    if (toolsLine) lines.push(toolsLine);
 
     const agentsLine = this.renderAgentsLine(context.agents);
-    if (agentsLine) {
-      lines.push(agentsLine);
-    }
+    if (agentsLine) lines.push(agentsLine);
 
     const todosLine = this.renderTodosLine(context.todos);
-    if (todosLine) {
-      lines.push(todosLine);
-    }
+    if (todosLine) lines.push(todosLine);
 
     return lines.join('\n');
   }

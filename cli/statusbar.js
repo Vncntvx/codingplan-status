@@ -15,13 +15,9 @@ class StatusBar {
     const usage = shortTerm;
     const percentage = usage.percentage;
 
-    // 基于已使用百分比：使用越多越危险
     let color = chalk.green;
-    if (percentage >= 85) {
-      color = chalk.red;
-    } else if (percentage >= 60) {
-      color = chalk.yellow;
-    }
+    if (percentage >= 85) color = chalk.red;
+    else if (percentage >= 60) color = chalk.yellow;
 
     const statusIcon = percentage >= 85 ? '⚠' : percentage >= 60 ? '⚡' : '✓';
 
@@ -57,7 +53,7 @@ class TerminalStatusBar {
     const providerId = this.configManager.getCurrentProviderId();
 
     if (!providerId) {
-      console.log(chalk.red('错误：未配置供应商'));
+      console.log(chalk.red('错误: 未配置供应商'));
       console.log(chalk.yellow('请先运行: cps auth <provider> <token>'));
       process.exit(1);
     }
@@ -66,7 +62,6 @@ class TerminalStatusBar {
     console.log(chalk.green(`✓ ${providerId} 状态栏已启动`));
     console.log(chalk.gray('按 Ctrl+C 退出\n'));
 
-    // 隐藏光标
     process.stdout.write('\x1B[?25l');
     this.startUpdating();
   }
@@ -93,7 +88,6 @@ class TerminalStatusBar {
         const statusBar = new StatusBar(usageData);
         const newLine = statusBar.render();
 
-        // 清除上一行并显示新状态
         if (this.currentLine) {
           readline.clearLine(process.stdout, 0);
           readline.cursorTo(process.stdout, 0);
@@ -102,12 +96,10 @@ class TerminalStatusBar {
         process.stdout.write(newLine);
         this.currentLine = newLine;
 
-        // 移动光标到底部下一行
         process.stdout.write('\n');
         readline.cursorTo(process.stdout, 0);
 
       } catch (error) {
-        // 显示错误但不退出
         readline.clearLine(process.stdout, 0);
         readline.cursorTo(process.stdout, 0);
         process.stdout.write(chalk.red(`错误: ${error.message}`));
@@ -116,18 +108,13 @@ class TerminalStatusBar {
       }
     };
 
-    // 立即更新一次
     await update();
-
-    // 每 10 秒更新（近实时）
     setInterval(update, 10000);
 
-    // 处理 Ctrl+C
     process.on('SIGINT', () => {
       this.stop();
     });
 
-    // 处理进程退出
     process.on('exit', () => {
       this.cleanup();
     });
@@ -141,16 +128,12 @@ class TerminalStatusBar {
   }
 
   cleanup() {
-    // 显示光标
     process.stdout.write('\x1B[?25h');
-
-    // 清除状态行
     readline.clearLine(process.stdout, 0);
     readline.cursorTo(process.stdout, 0);
   }
 }
 
-// 直接运行此文件时
 if (require.main === module) {
   const statusBar = new TerminalStatusBar();
   statusBar.start().catch(error => {

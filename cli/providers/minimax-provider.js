@@ -55,9 +55,7 @@ class MinimaxProvider extends BaseProvider {
   }
 
   async getSubscriptionDetails() {
-    if (!this.config.token) {
-      return null;
-    }
+    if (!this.config.token) return null;
 
     try {
       const response = await axios.get(
@@ -83,9 +81,7 @@ class MinimaxProvider extends BaseProvider {
   }
 
   async getBillingRecords(page = 1, limit = 100) {
-    if (!this.config.token) {
-      return [];
-    }
+    if (!this.config.token) return [];
 
     try {
       const response = await axios.get(
@@ -115,24 +111,16 @@ class MinimaxProvider extends BaseProvider {
       const now = new Date();
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0).getTime();
 
-      // 获取账单记录
       const allRecords = [];
       for (let page = 1; page <= 100; page++) {
         const response = await this.getBillingRecords(page, 100);
-        if (!response || !response.charge_records || response.charge_records.length === 0) {
-          break;
-        }
+        if (!response || !response.charge_records || response.charge_records.length === 0) break;
         allRecords.push(...response.charge_records);
-        if (response.charge_records.length < 100) {
-          break;
-        }
+        if (response.charge_records.length < 100) break;
       }
 
-      if (allRecords.length === 0) {
-        return null;
-      }
+      if (allRecords.length === 0) return null;
 
-      // 计算统计
       const nowMs = Date.now();
       const todayStart = new Date().setHours(0, 0, 0, 0);
       const yesterdayStart = todayStart - 24 * 60 * 60 * 1000;
@@ -185,17 +173,15 @@ class MinimaxProvider extends BaseProvider {
     const startTime = new Date(modelData.start_time);
     const endTime = new Date(modelData.end_time);
 
-    // 注意：current_interval_usage_count 实际是剩余次数，不是已用次数
+    // current_interval_usage_count 实际是剩余次数
     const remainingCount = modelData.current_interval_usage_count;
     const usedCount = modelData.current_interval_total_count - remainingCount;
     const usedPercentage = Math.round((usedCount / modelData.current_interval_total_count) * 100);
 
-    // 剩余时间
     const remainingMs = modelData.remains_time;
     const hours = Math.floor(remainingMs / (1000 * 60 * 60));
     const minutes = Math.floor((remainingMs % (1000 * 60 * 60)) / (1000 * 60));
 
-    // 周限额
     const weeklyUsed = modelData.current_weekly_total_count - modelData.current_weekly_usage_count;
     const weeklyTotal = modelData.current_weekly_total_count;
     const weeklyPercentage = weeklyTotal > 0 ? Math.floor((weeklyUsed / weeklyTotal) * 100) : 0;
@@ -237,7 +223,7 @@ class MinimaxProvider extends BaseProvider {
         minutes,
         text: hours > 0 ? `${hours} 小时 ${minutes} 分钟后重置` : `${minutes} 分钟后重置`,
       },
-      expiry: null, // 需要从 subscription 填充
+      expiry: null,
       allModels: this.parseAllModels(apiData),
     };
   }
@@ -245,7 +231,6 @@ class MinimaxProvider extends BaseProvider {
   parseWithExpiry(apiData, subscriptionData) {
     const data = this.parseUsageData(apiData);
 
-    // 解析订阅到期信息
     if (
       subscriptionData &&
       subscriptionData.current_subscribe &&
@@ -273,9 +258,7 @@ class MinimaxProvider extends BaseProvider {
   }
 
   parseAllModels(apiData) {
-    if (!apiData.model_remains || apiData.model_remains.length === 0) {
-      return [];
-    }
+    if (!apiData.model_remains || apiData.model_remains.length === 0) return [];
 
     return apiData.model_remains.map(modelData => {
       const totalCount = modelData.current_interval_total_count;

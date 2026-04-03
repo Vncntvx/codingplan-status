@@ -19,9 +19,7 @@ class ConfigCounter {
       if (config.mcpServers && typeof config.mcpServers === 'object') {
         return new Set(Object.keys(config.mcpServers));
       }
-    } catch {
-      // Ignore errors
-    }
+    } catch {}
     return new Set();
   }
 
@@ -45,9 +43,7 @@ class ConfigCounter {
       if (config.hooks && typeof config.hooks === 'object') {
         return Object.keys(config.hooks).length;
       }
-    } catch {
-      // Ignore errors
-    }
+    } catch {}
     return 0;
   }
 
@@ -65,9 +61,7 @@ class ConfigCounter {
           count++;
         }
       }
-    } catch {
-      // Ignore errors
-    }
+    } catch {}
     return count;
   }
 
@@ -93,21 +87,10 @@ class ConfigCounter {
 
     // Project scope
     if (cwd) {
-      if (fs.existsSync(path.join(cwd, 'CLAUDE.md'))) {
-        claudeMdCount++;
-      }
-
-      if (fs.existsSync(path.join(cwd, 'CLAUDE.local.md'))) {
-        claudeMdCount++;
-      }
-
-      if (fs.existsSync(path.join(cwd, '.claude', 'CLAUDE.md'))) {
-        claudeMdCount++;
-      }
-
-      if (fs.existsSync(path.join(cwd, '.claude', 'CLAUDE.local.md'))) {
-        claudeMdCount++;
-      }
+      if (fs.existsSync(path.join(cwd, 'CLAUDE.md'))) claudeMdCount++;
+      if (fs.existsSync(path.join(cwd, 'CLAUDE.local.md'))) claudeMdCount++;
+      if (fs.existsSync(path.join(cwd, '.claude', 'CLAUDE.md'))) claudeMdCount++;
+      if (fs.existsSync(path.join(cwd, '.claude', 'CLAUDE.local.md'))) claudeMdCount++;
 
       rulesCount += this.countRulesInDir(path.join(cwd, '.claude', 'rules'));
 

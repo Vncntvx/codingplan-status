@@ -37,13 +37,9 @@ class TranscriptParser {
         try {
           const entry = JSON.parse(line);
           this.processEntry(entry, result);
-        } catch {
-          // Skip malformed lines
-        }
+        } catch {}
       }
-    } catch {
-      // Return partial results on error
-    }
+    } catch {}
 
     result.tools = Array.from(this.toolMap.values()).slice(-20);
     result.agents = Array.from(this.agentMap.values()).slice(-10);
@@ -149,9 +145,9 @@ class TranscriptParser {
     try {
       const stats = fs.statSync(transcriptPath);
       const fileSize = stats.size;
-      const bufferSize = Math.min(fileSize, 64 * 1024); // 读取最后 64KB
+      const bufferSize = Math.min(fileSize, 64 * 1024);
       const buffer = Buffer.alloc(bufferSize);
-      
+
       const fd = fs.openSync(transcriptPath, 'r');
       fs.readSync(fd, buffer, 0, bufferSize, Math.max(0, fileSize - bufferSize));
       fs.closeSync(fd);
@@ -161,7 +157,6 @@ class TranscriptParser {
 
       if (lines.length === 0) return null;
 
-      // 检查最后一行是否是 summary
       const lastLine = lines[lines.length - 1].trim();
       try {
         const lastEntry = JSON.parse(lastLine);
@@ -170,7 +165,6 @@ class TranscriptParser {
         }
       } catch (e) {}
 
-      // 从后往前找最近的 assistant usage
       for (let i = lines.length - 1; i >= 0; i--) {
         try {
           const entry = JSON.parse(lines[i]);
