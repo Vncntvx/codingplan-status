@@ -1,122 +1,142 @@
-# MiniMax StatusBar
+# CodingPlan StatusBar
 
-[![npm version](https://img.shields.io/npm/v/minimax-status.svg)](https://www.npmjs.com/package/minimax-status)
-[![npm downloads](https://img.shields.io/npm/dm/minimax-status.svg)](https://www.npmjs.com/package/minimax-status)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![VSCode Extension](https://img.shields.io/badge/VSCode-MiniMax-blue?style=flat-square)](https://marketplace.visualstudio.com/items?itemName=JochenYang.minimax-status-vscode)
 
-MiniMax Token-Plan 使用状态监控工具，支持 CLI 命令和 Claude Code 状态栏集成。
+Coding Plan 额度与用量监控工具，支持多供应商（MiniMax、Infini AI）。
 
-## 版本
+## 支持的供应商
 
-| 插件 | 版本 | 安装方式 |
-|------|------|----------|
-| **CLI** | 1.1.11 | `npm install -g minimax-status` |
-| **VSCode** | 1.2.7 | [VSCode Marketplace](https://marketplace.visualstudio.com/items?itemName=JochenYang.minimax-status-vscode) 或 [下载 VSIX](https://github.com/JochenYang/minimax-status/releases) |
-| **OpenClaw** | - | 参考 `openclaw/minimax-usage/` 目录 |
+| 供应商 | 说明 |
+|--------|------|
+| **MiniMax** | MiniMax Token-Plan 编程套餐 |
+| **Infini AI** | GenStudio Infini 编码套餐 |
 
 ## 特性
 
-- ✅ **实时状态监控**: 显示 MiniMax Token-Plan 使用额度、剩余次数、重置时间
-- ✅ **上下文窗口跟踪**: 智能解析转录文件，准确显示当前会话的上下文使用量
+- ✅ **多供应商支持**: 支持 MiniMax、Infini AI 等多个 Coding Plan 供应商
+- ✅ **实时状态监控**: 显示使用额度、剩余次数、重置时间
 - ✅ **多种显示模式**: 详细模式、紧凑模式、持续状态栏
 - ✅ **Claude Code 集成**: 可在 Claude Code 底部状态栏显示
 - ✅ **智能颜色编码**: 根据使用率自动切换颜色和图标
-- ✅ **跨会话支持**: 自动从项目历史中查找上下文信息
-- ✅ **简洁命令**: `minimax status` 查看状态
-- ✅ **安全存储**: 凭据存储在独立的配置文件中
+- ✅ **简洁命令**: `cps status` 查看状态
+
+## 安装
+
+### 方式一：从 Git 仓库安装（推荐）
+
+```bash
+# 全局安装
+bun add -g github:<username>/codingplan-status
+
+# 或者指定分支/标签
+bun add -g github:<username>/codingplan-status#main
+```
+
+### 方式二：本地克隆安装
+
+```bash
+# 克隆项目
+git clone <repository>
+cd codingplan-status
+
+# 安装依赖
+bun install
+
+# 全局链接
+bun link
+```
+
+安装完成后，`cps` 命令将全局可用。
 
 ## 快速开始
 
-### 1. 安装
+### 1. 配置认证
 
 ```bash
-npm install -g minimax-status
+# 配置 MiniMax
+cps auth minimax <token>
+
+# 或配置 Infini AI
+cps auth infini sk-cp-xxxxx
 ```
-
-### 2. 更新(如果已经安装)
-
-```bash
-npm update -g minimax-status
-```
-
-### 3. 配置认证
-
-```bash
-minimax auth <token>
-```
-
-配置信息将保存在 `~/.minimax-config.json` 文件中。
 
 获取令牌:
+
+**MiniMax:**
 
 1. 访问 [MiniMax 开放平台](https://platform.minimaxi.com/user-center/payment/coding-plan)
 2. 登录并进入控制台
 3. Coding Plan 中创建或获取 API Key
 
-### 4. 查看状态
+**Infini AI:**
+
+1. 访问 [Infini Coding Plan 页面](https://cloud.infini-ai.com/genstudio/code)
+2. 登录并获取 API Key (以 `sk-cp-` 开头)
+
+### 2. 查看状态
 
 ```bash
 # 详细模式
-minimax status
+cps status
 
 # 紧凑模式
-minimax status --compact
+cps status --compact
 
 # 持续监控模式
-minimax status --watch
+cps status --watch
 ```
 
-## VSCode 扩展
+## 命令说明
 
-提供 VSCode 扩展版本，支持在 VSCode 底部状态栏显示使用状态。
+### 供应商管理
 
-### 安装方式
+| 命令 | 描述 |
+|------|------|
+| `cps providers` | 列出所有支持的供应商（标记已配置状态） |
+| `cps use <provider>` | 切换当前供应商 |
+| `cps auth <provider> <token>` | 设置供应商认证凭据 |
+| `cps config` | 查看当前配置 |
 
-**方式一：从 VSCode 市场安装（推荐）**
+### 状态查询
 
-1. 在 VSCode 中搜索 "MiniMax Status"
-2. 点击安装
+| 命令 | 描述 |
+|------|------|
+| `cps status` | 显示当前供应商额度与用量 |
+| `cps status <provider>` | 显示指定供应商额度与用量 |
+| `cps status --compact` | 紧凑模式显示 |
+| `cps status --watch` | 实时监控模式 |
+| `cps list` | 显示当前供应商所有模型的额度与用量 |
+| `cps list <provider>` | 显示指定供应商所有模型的额度与用量 |
+| `cps bar` | 终端底部持续状态栏 |
 
-**方式二：下载 VSIX 文件**
+### 状态栏集成
 
-1. 访问 [GitHub Releases](https://github.com/JochenYang/minimax-status/releases)
-2. 下载最新的 `.vsix` 文件
-3. 在 VSCode 中按 `Ctrl+Shift+P`
-4. 输入 "Extensions: Install from VSIX..."
-5. 选择下载的 VSIX 文件
-
-**方式二：从源码构建**
-
-```bash
-git clone https://github.com/JochenYang/minimax-status.git
-cd minimax-status/vscode-extension
-npm install
-npm run package
-# 在 VSCode 中安装生成的 .vsix 文件
-```
-
-### 配置步骤
-
-1. 安装扩展后，点击状态栏的 "MiniMax 未配置" 按钮
-2. 或使用命令 "MiniMax Status: 配置向导"
-3. 输入您的 API Key
-4. 配置完成后，状态栏将显示实时使用状态
+| 命令 | 描述 |
+|------|------|
+| `cps statusline` | Claude Code 状态栏集成 |
+| `cps droid-statusline` | Droid 状态栏集成 |
 
 ## Claude Code 集成
 
-将 MiniMax 使用状态显示在 Claude Code 底部状态栏。
+将额度与用量显示在 Claude Code 底部状态栏。
 
 ### 配置步骤
 
-1. **安装和配置工具**:
+1. **安装工具**:
 
    ```bash
-   npm install -g minimax-status
-   minimax auth <token>
+   bun add -g github:<username>/codingplan-status
    ```
 
-2. **配置 Claude Code**:
+2. **配置认证**:
+
+   ```bash
+   cps auth minimax <token>
+   # 或
+   cps auth infini sk-cp-xxxxx
+   ```
+
+3. **配置 Claude Code**:
 
    编辑 `~/.claude/settings.json`:
 
@@ -124,82 +144,26 @@ npm run package
    {
      "statusLine": {
        "type": "command",
-       "command": "minimax statusline"
+       "command": "cps statusline"
      }
    }
    ```
 
-3. **重启 Claude Code**
+4. **重启 Claude Code**
 
 集成成功后，底部状态栏将显示:
 
-```
+```text
 my-app ❯ main * ❯ MiniMax-M2 ❯ 60% (2700/4500) ❯ 1h20m ❯ 剩5天
 ```
 
-显示格式：`目录 ❯ 分支 ❯ 模型 ❯ 百分比(剩余/总数) ❯ 倒计时 ❯ 到期天数`
-
-**颜色说明**:
-
-- **上下文使用量**: ≥85%红色 | 60-85%黄色 | <60%绿色
-- **到期时间**: ≤3天红色 | ≤7天黄色 | >7天绿色
-
-### Git 分支显示说明
-
-状态栏会显示当前 Git 分支信息：
-
-```
-my-app │ main * │ ...
-```
-
-**符号说明**:
-
-| 符号 | 含义 |
-|------|------|
-| * | 有未提交的更改 |
-
-**颜色规则**:
-
-| 元素 | 颜色 | 说明 |
-|------|------|------|
-| 主分支 (main/master) | 绿色 | 默认/主分支 |
-| 其他分支 | 白色 | 普通功能分支 |
-| ⬆ 未推送 | 黄色 | 有待推送的 commit |
-| ⬇ 未拉取 | 青色 | 有待拉取的 commit |
-| • 未提交 | 红色 | 工作区有未提交的更改 |
-
-### 上下文窗口显示说明
-
-状态栏会智能显示当前会话的上下文窗口使用情况：
-
-- **有转录数据时**: 显示 `⚡ 百分比·已用 tokens`
-  - 例如: `⚡ 85%·150.0k tokens` 表示已使用 150K tokens，占容量的 85%
-
-- **无转录数据时**: 仅显示上下文窗口总容量
-  - 例如: `200K` 表示当前模型的上下文窗口大小
-
-**智能特性**:
-
-- ✅ 自动解析 Claude Code 转录文件（transcript）
-- ✅ 支持 Anthropic 和 OpenAI 两种 token 格式
-- ✅ 正确计算缓存 tokens（cache creation + cache read）
-- ✅ 跨会话查找：当前会话无数据时，自动从项目历史中查找
-- ✅ 处理 summary 类型条目和 leafUuid 引用
-
-**注意**: MiniMax 的配置独立存储在 `~/.minimax-config.json`，与 Claude Code 的配置分离。
-
 ## Droid 集成
 
-将 MiniMax 使用状态显示在 Droid 底部状态栏。
+将额度与用量显示在 Droid 底部状态栏。
 
 ### 配置步骤
 
-1. **安装和配置工具**:
-
-   ```bash
-   npm install -g minimax-status
-   minimax auth <token>
-   ```
+1. **安装工具**
 
 2. **配置 Droid**:
 
@@ -209,135 +173,80 @@ my-app │ main * │ ...
    {
      "statusLine": {
        "type": "command",
-       "command": "minimax droid-statusline"
+       "command": "cps droid-statusline"
      }
    }
    ```
 
 3. **重启 Droid**
 
-集成成功后，底部状态栏将显示:
-
-```
-minimax-status ❯ main * ❯ 10% (4047/4500) ❯ 12m ❯ 剩21天
-```
-
-显示格式：`目录 ❯ 分支 ❯ 百分比(剩余/总数) ❯ 倒计时 ❯ 到期天数`
-
-**颜色说明**:
-
-- **使用量**: ≥85%红色 | 60-85%黄色 | <60%绿色
-- **到期时间**: ≤3天红色 | ≤7天黄色 | >7天绿色
-
 ## 显示示例
 
 ### 详细模式
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
-│ MiniMax Claude Code 使用状态                        │
+│ MiniMax 额度与用量                                             │
 │                                                             │
-│ 当前模型: MiniMax-M2                          │
-│ 时间窗口: 20:00-00:00(UTC+8)                          │
-│ 剩余时间: 1 小时 42 分钟后重置                  │
+│ 当前模型: MiniMax-M2                                         │
+│ 时间窗口: 20:00-00:00(UTC+8)                                 │
+│ 剩余时间: 1 小时 42 分钟后重置                                │
 │                                                             │
-│ 已用额度: █████░░░░░░░░░░░░░░░░░░░░░░░ 6%  │
-│      剩余: 4234/4500 次调用                   │
-│      套餐到期: 02/26/2026（还剩 6 天）         │
+│ 已用额度: █████░░░░░░░░░░░░░░░░░░░░░░░ 6%                   │
+│      剩余: 4234/4500 次调用                                  │
+│      套餐到期: 02/26/2026（还剩 6 天）                        │
 │                                                             │
-│ Token 消耗统计:                                       │
-│      昨日消耗: 4996.4万                              │
-│      近7天消耗: 2.8亿                              │
-│      套餐总消耗: 14.7亿                             │
-│                                                             │
-│ 状态: ✓ 正常使用                                   │
+│ 状态: ✓ 正常使用                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ### 紧凑模式
 
-```
+```text
 ● MiniMax-M2 27% • 1 小时 26 分钟后重置 • ✓ 正常使用
 ```
 
-### 持续状态栏模式
+### Infini 模式
 
+```text
+┌────────────────────────────────────────────────────────┐
+│ Infini AI 额度与用量                                     │
+│                                                        │
+│ 5小时: ███░░░░░░░░░░░░░░░░░░░░░░░░░░░ 10% (4500/5000)  │
+│                                                        │
+│ 7天:   █░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 5% (5700/6000)   │
+│                                                        │
+│ 30天:  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 2% (11760/12000) │
+│                                                        │
+│ 状态: ✓ 正常使用                                       │
+└────────────────────────────────────────────────────────┘
 ```
-✓ MiniMax 状态栏已启动
-按 Ctrl+C 退出
 
-[● MiniMax-M2 27% • 3307/4500 • 1h26m ⚡
-```
+## 颜色规则
 
-## 截图演示
+### 使用百分比
 
-### Claude Code 集成
-
-![Claude Code StatusBar](./images/claude%20code.png)
-
-### Droid 集成
-
-![Droid StatusBar](./images/droid.png)
-
-## 命令说明
-
-| 命令                    | 描述                                        | 示例                        |
-| --------------------- | ------------------------------------------- | ----------------------------- |
-| `minimax auth`        | 设置认证凭据                                 | `minimax auth <token>`         |
-| `minimax status`      | 显示当前使用状态（支持 --compact、--watch） | `minimax status`                 |
-| `minimax bar`         | 终端底部持续状态栏                          | `minimax bar`                    |
-| `minimax statusline`  | Claude Code 状态栏集成                      | 用于 Claude Code 配置            |
-| `minimax droid-statusline` | Droid 状态栏集成                      | 用于 Droid 配置            |
-
-## 状态说明
-
-### 显示元素
-
-| 元素   | 说明                               |
-| ------ | ---------------------------------- |
-| 目录   | 当前工作目录                       |
-| 分支   | Git 分支名称                       |
-| 模型   | MiniMax 模型名称                   |
-| 上下文 | 上下文窗口使用率                  |
-| Usage  | 使用量百分比(剩余/总数)           |
-| ⏱     | 额度重置倒计时                     |
-| 到期   | 订阅到期时间（颜色动态变化）        |
-
-### 颜色规则
-
-| 场景          | 颜色 | 说明     |
-| ------------- | ---- | -------- |
-| 上下文 ≥85%   | 红色 | 危险状态 |
-| 上下文 60-85% | 黄色 | 注意使用 |
-| 上下文 <60%   | 绿色 | 正常使用 |
-| 到期 ≤ 3天    | 红色 | 即将到期 |
-| 到期 ≤ 7天    | 黄色 | 即将到期 |
-| 到期 > 7天    | 绿色 | 订阅正常 |
+| 场景 | 颜色 | 说明 |
+|------|------|------|
+| ≥85% | 红色 | 危险状态 |
+| 60-85% | 黄色 | 注意使用 |
+| <60% | 绿色 | 正常使用 |
 
 ## 配置文件
 
-### 默认位置
-
-- 独立配置文件: `~/.minimax-config.json`
-
-### 配置示例
+配置存储在 `~/.codingplan-config.json`:
 
 ```json
 {
-  "token": "your_access_token_here"
-}
-```
-
-### Claude Code 配置
-
-Claude Code 只需要配置状态栏命令：
-
-```json
-// ~/.claude/settings.json
-{
-  "statusLine": {
-    "type": "command",
-    "command": "minimax statusline"
+  "version": 1,
+  "currentProvider": "minimax",
+  "providers": {
+    "minimax": {
+      "token": "xxx..."
+    },
+    "infini": {
+      "token": "sk-cp-xxx..."
+    }
   }
 }
 ```
@@ -351,46 +260,40 @@ Claude Code 只需要配置状态栏命令：
 ### 命令未找到
 
 ```bash
-# 确保已全局安装
-npm install -g minimax-status
+# 方式一：重新从 Git 安装
+bun add -g github:<username>/codingplan-status
 
-# 重新打开终端
+# 方式二：本地安装时确保执行了 bun link
+cd codingplan-status
+bun link
 ```
 
 ### 认证失败
 
 ```bash
 # 检查令牌
-minimax status
+cps status
 
 # 重新设置认证
-minimax auth <new_token>
+cps auth minimax <new_token>
 ```
 
 ### 状态栏不显示
 
 1. 检查 Claude Code 配置
 2. 重启 Claude Code
-3. 手动测试: `minimax statusline`
+3. 手动测试: `cps statusline`
 
-## 开发
-
-### 构建项目
+## 卸载
 
 ```bash
-git clone <repository>
-cd minimax-status
-npm install
-```
+# 从 Git 安装的卸载
+bun remove -g codingplan-status
 
-### 测试
-
-```bash
-# 运行示例
-node cli/example.js
-
-# 测试 CLI 命令
-node cli/index.js status
+# 本地安装的卸载
+bun unlink
+rm -rf codingplan-status
+rm ~/.codingplan-config.json
 ```
 
 ## 许可证
@@ -401,20 +304,13 @@ MIT License - 详见 [LICENSE](LICENSE) 文件
 
 欢迎提交 Issue 和 Pull Request！
 
-## 导航
-
-| 客户端 | 路径 | 说明 |
-|--------|------|------|
-| **CLI** | [`cli/`](cli/) | 命令行工具，npm 全局包 |
-| **VSCode** | [`vscode-extension/`](vscode-extension/) | VSCode 状态栏集成 |
-| **OpenClaw** | [`openclaw/`](openclaw/) | OpenClaw 集成 |
-
 ---
 
 ## 相关链接
 
 - [MiniMax 开放平台](https://platform.minimaxi.com/)
+- [Infini AI](https://cloud.infini-ai.com/)
 
 ---
 
-**注意**: 本工具仅用于监控 MiniMax Token-Plan 用量使用状态，不存储或传输任何用户数据。
+**注意**: 本工具仅用于监控 Coding Plan 用量额度与用量，不存储或传输任何用户数据。

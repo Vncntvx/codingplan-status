@@ -1,62 +1,31 @@
-const MinimaxAPI = require("./api");
+const { getConfigManager } = require("./config-manager");
+const { createProvider } = require("./providers");
 const chalk = require("chalk").default;
-const fs = require("fs");
-const path = require("path");
 
 class PromptStatus {
   constructor() {
-    this.api = new MinimaxAPI();
-  }
-
-  async loadSettings() {
-    // 尝试从各种位置加载 settings.json
-    const possiblePaths = [
-      path.join(
-        process.env.HOME || process.env.USERPROFILE,
-        ".claude",
-        "settings.json"
-      ),
-      path.join(
-        process.env.HOME || process.env.USERPROFILE,
-        ".config",
-        "claude",
-        "settings.json"
-      ),
-      path.join(process.cwd(), ".claude-settings.json"),
-      path.join(process.cwd(), ".claude", "settings.json"),
-    ];
-
-    for (const configPath of possiblePaths) {
-      if (fs.existsSync(configPath)) {
-        try {
-          const settings = JSON.parse(fs.readFileSync(configPath, "utf8"));
-          if (settings.minimaxToken && settings.minimaxGroupId) {
-            this.api.setCredentials(
-              settings.minimaxToken,
-              settings.minimaxGroupId
-            );
-            return settings.minimaxStatus || {};
-          }
-        } catch (error) {
-          console.error(
-            `Failed to read settings from ${configPath}:`,
-            error.message
-          );
-        }
-      }
-    }
-
-    return {};
+    this.configManager = getConfigManager();
   }
 
   async getPromptStatus(mode = "compact") {
     try {
-      await this.loadSettings();
-      const [apiData, subscriptionData] = await Promise.all([
-        this.api.getUsageStatus(),
-        this.api.getSubscriptionDetails(),
-      ]);
-      const usageData = this.api.parseUsageData(apiData, subscriptionData);
+      const providerId = this.configManager.getCurrentProviderId();
+      if (!providerId) {
+        return null;
+      }
+
+      const credentials = this.configManager.getProviderCredentials(providerId);
+      const provider = createProvider(providerId, credentials);
+
+      const apiData = await provider.fetchUsageData();
+
+      let usageData;
+      if (provider.constructor.id === 'minimax') {
+        const subscriptionData = await provider.getSubscriptionDetails();
+        usageData = provider.parseWithExpiry(apiData, subscriptionData);
+      } else {
+        usageData = provider.parseUsageData(apiData);
+      }
 
       if (mode === "compact") {
         return this.renderCompact(usageData);
@@ -70,7 +39,8 @@ class PromptStatus {
   }
 
   renderMinimal(data) {
-    const { usage } = data;
+    const { shortTerm } = data;
+    const usage = shortTerm;
     const percentage = usage.percentage;
 
     let color = chalk.green;
@@ -80,11 +50,12 @@ class PromptStatus {
       color = chalk.yellow;
     }
 
-    return color(`[MM:${percentage}%]`);
+    return color(`[${data.providerId || 'CP'}:${percentage}%]`);
   }
 
   renderCompact(data) {
-    const { usage, remaining, modelName, expiry } = data;
+    const { shortTerm, remaining, modelName, expiry, providerName } = data;
+    const usage = shortTerm;
     const percentage = usage.percentage;
 
     let color = chalk.green;
@@ -95,10 +66,13 @@ class PromptStatus {
     }
 
     const status = percentage >= 85 ? "⚠" : percentage >= 60 ? "⚡" : "✓";
-    const remainingText =
-      remaining.hours > 0
+
+    let remainingText = '';
+    if (remaining && (remaining.hours > 0 || remaining.minutes > 0)) {
+      remainingText = remaining.hours > 0
         ? `${remaining.hours}h${remaining.minutes}m`
         : `${remaining.minutes}m`;
+    }
 
     // 添加到期信息（如果可用）
     const expiryInfo = expiry ? ` ${chalk.cyan('•')} 剩余: ${expiry.daysRemaining}天` : '';

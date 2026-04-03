@@ -1,6 +1,6 @@
 # MiniMax Status
 
-在 VS Code 状态栏实时显示 MiniMax Token-Plan 使用状态。
+在 VS Code 状态栏实时显示 MiniMax Token-Plan 额度与用量。
 
 [![VS Code Extension](https://img.shields.io/badge/VS%20Code-Extension-blue?style=flat-square)](https://marketplace.visualstudio.com/items?itemName=JochenYang.minimax-status-vscode)
 [![Version](https://img.shields.io/badge/version-1.2.5-green?style=flat-square)](https://marketplace.visualstudio.com/items?itemName=JochenYang.minimax-status-vscode)
@@ -145,4 +145,4 @@ Click to refresh
 
 ---
 
-> **隐私说明**：本扩展仅用于显示 MiniMax 使用状态，不存储或传输用户数据。认证信息保存在本地设置中。
+> **隐私说明**：本扩展仅用于显示 MiniMax 额度与用量，不存储或传输用户数据。认证信息保存在本地设置中。

@@ -105,7 +105,8 @@ class Renderer {
       if (usagePercentage >= 95) bg = '#991B1B'; // danger (Red 800)
       else if (usagePercentage >= 75) bg = '#9A3412'; // warn (Orange 800)
 
-      let usageText = ` ${usagePercentage}%  (${usage.remaining}/${usage.total}) `;
+      // 使用已用/总额显示，确保与进度百分比（已用）一致
+      let usageText = ` ${usagePercentage}%  (${usage.used}/${usage.total}) `;
       
       if (weekly) {
         if (weekly.unlimited) {

@@ -6,146 +6,235 @@ process.env.FORCE_COLOR = "1";
 const { Command } = require("commander");
 const chalk = require("chalk").default;
 const ora = require("ora").default;
-const MinimaxAPI = require("./api");
 const StatusBar = require("./status");
 const TranscriptParser = require("./transcript-parser");
 const ConfigCounter = require("./config-counter");
 const Renderer = require("./renderer");
+const { getConfigManager } = require("./config-manager");
+const { listProviders, createProvider, hasProvider, getProviderIds } = require("./providers");
 const packageJson = require("../package.json");
 
 const program = new Command();
-const api = new MinimaxAPI();
 const transcriptParser = new TranscriptParser();
 const configCounter = new ConfigCounter();
 const renderer = new Renderer();
+const configManager = getConfigManager();
 
 program
-  .name("minimax-status")
-  .description("MiniMax Claude Code 使用状态监控工具")
+  .name("cps")
+  .description("Coding Plan 额度与用量监控工具")
   .version(packageJson.version);
 
-// Auth command (设置认证凭据)
+// ==================== 供应商管理命令 ====================
+
+// 列出所有支持的供应商
 program
-  .command("auth")
-  .description("设置认证凭据")
-  .argument("<token>", "MiniMax 访问令牌")
-  .argument("[groupId]", "MiniMax 组 ID（已废弃，可不填）")
-  .action((token, groupId) => {
-    api.setCredentials(token, groupId || null);
-    console.log(chalk.green("✓ 认证信息已保存"));
+  .command("providers")
+  .description("列出所有支持的供应商")
+  .action(() => {
+    const providers = listProviders();
+    const configured = configManager.listConfiguredProviders();
+    const current = configManager.getCurrentProviderId();
+
+    console.log(chalk.bold("\n支持的供应商:\n"));
+
+    for (const p of providers) {
+      const isConfigured = configured.includes(p.id);
+      const isCurrent = current === p.id;
+      const status = isCurrent ? chalk.green(" ● 当前") :
+                     isConfigured ? chalk.cyan(" ○ 已配置") : chalk.gray("   未配置");
+      console.log(`  ${chalk.cyan(p.id.padEnd(10))} ${p.displayName}${status}`);
+    }
+
+    if (configured.length > 0) {
+      console.log(chalk.bold("\n使用 \"cps status <provider>\" 查看特定供应商状态"));
+    }
+    console.log();
   });
 
-// Health check command (检查配置和连接状态)
+// 切换供应商
 program
-  .command("health")
-  .description("检查配置和连接状态")
-  .action(async () => {
-    const spinner = ora("正在检查...").start();
-    let checks = {
-      config: false,
-      token: false,
-      groupId: false,
-      api: false,
-    };
+  .command("use <provider>")
+  .description("切换当前使用的供应商")
+  .action((providerId) => {
+    if (!hasProvider(providerId)) {
+      console.log(chalk.red(`错误: 未知的供应商 "${providerId}"`));
+      console.log(chalk.gray(`运行 "cps providers" 查看支持的供应商`));
+      process.exit(1);
+    }
 
-    // 检查配置文件
-    try {
-      const configPath = require("path").join(
-        process.env.HOME || process.env.USERPROFILE,
-        ".minimax-config.json"
-      );
-      if (require("fs").existsSync(configPath)) {
-        checks.config = true;
+    const configured = configManager.listConfiguredProviders();
+    if (!configured.includes(providerId)) {
+      console.log(chalk.yellow(`供应商 "${providerId}" 尚未配置`));
+      console.log(chalk.gray(`运行 "cps auth ${providerId} <token>" 进行配置`));
+      process.exit(1);
+    }
+
+    configManager.setCurrentProvider(providerId);
+    console.log(chalk.green(`✓ 已切换到 ${providerId}`));
+  });
+
+// 认证命令 (支持多供应商)
+program
+  .command("auth [provider]")
+  .description("设置供应商认证凭据")
+  .argument("[token]", "API Token/Key")
+  .argument("[extra...]", "其他配置参数")
+  .action((providerId, token, extra) => {
+    // 如果没有参数，显示帮助
+    if (!providerId) {
+      console.log(chalk.bold("\n用法:"));
+      console.log(`  cps auth <provider> <token>`);
+      console.log(chalk.bold("\n支持的供应商:"));
+      const providers = listProviders();
+      for (const p of providers) {
+        console.log(`  ${chalk.cyan(p.id)} - ${p.displayName}`);
+        console.log(chalk.gray(`    字段: ${p.configSchema.map(f => `${f.key}${f.required ? '(必填)' : ''}`).join(", ")}`));
       }
-      spinner.succeed("配置文件检查");
-    } catch (error) {
-      spinner.fail("配置文件检查失败");
+      console.log();
+      return;
     }
 
-    // 检查Token
-    if (api.token) {
-      checks.token = true;
-      console.log(chalk.green("✓ Token: ") + chalk.gray("已配置"));
-    } else {
-      console.log(chalk.red("✗ Token: ") + chalk.gray("未配置"));
+    // 如果第一个参数不是有效的 provider，提示错误
+    if (!hasProvider(providerId)) {
+      console.log(chalk.red(`错误: 未知的供应商 "${providerId}"`));
+      console.log(chalk.gray(`运行 "cps providers" 查看支持的供应商`));
+      process.exit(1);
     }
 
-    // 检查GroupID
-    if (api.groupId) {
-      checks.groupId = true;
-      console.log(chalk.green("✓ GroupID: ") + chalk.gray("已配置"));
-    } else {
-      console.log(chalk.red("✗ GroupID: ") + chalk.gray("未配置"));
+    if (!token) {
+      console.log(chalk.red("错误: 请提供 Token"));
+      console.log(chalk.gray(`用法: cps auth ${providerId} <token>`));
+      process.exit(1);
     }
 
-    // 测试API连接
-    if (checks.token && checks.groupId) {
-      try {
-        await api.getUsageStatus();
-        checks.api = true;
-        console.log(chalk.green("✓ API连接: ") + chalk.gray("正常"));
-      } catch (error) {
-        console.log(chalk.red("✗ API连接: ") + chalk.gray(error.message));
-      }
+    const { getProviderClass } = require("./providers");
+    const ProviderClass = getProviderClass(providerId);
+    const schema = ProviderClass.getConfigSchema();
+    const credentials = {};
+
+    // 第一个字段是 token
+    credentials[schema[0].key] = token;
+
+    // 处理额外参数
+    if (extra && extra.length > 0 && schema.length > 1) {
+      credentials[schema[1].key] = extra[0];
     }
 
-    // 总结
-    console.log("\n" + chalk.bold("健康检查结果:"));
-    const allPassed = Object.values(checks).every((v) => v);
-    if (allPassed) {
-      console.log(chalk.green("✓ 所有检查通过，配置正常！"));
-    } else {
-      console.log(chalk.yellow("⚠ 发现问题，请检查上述错误信息"));
+    configManager.setProviderCredentials(providerId, credentials);
+    console.log(chalk.green(`✓ ${ProviderClass.displayName} 认证信息已保存`));
+
+    // 如果这是第一个配置的供应商，提示
+    const configured = configManager.listConfiguredProviders();
+    if (configured.length === 1) {
+      console.log(chalk.gray(`已自动设置为当前供应商`));
     }
   });
 
-// Status command (显示当前使用状态)
+// 查看当前配置
 program
-  .command("status")
-  .description("显示当前使用状态")
+  .command("config")
+  .description("查看当前配置")
+  .action(() => {
+    const current = configManager.getCurrentProviderId();
+    const configured = configManager.listConfiguredProviders();
+
+    console.log(chalk.bold("\n当前配置:\n"));
+    console.log(`配置文件: ${chalk.gray(configManager.getConfigPath())}`);
+    console.log(`当前供应商: ${current ? chalk.cyan(current) : chalk.gray("未设置")}`);
+    console.log(`\n已配置的供应商:`);
+
+    if (configured.length === 0) {
+      console.log(chalk.gray("  (无)"));
+    } else {
+      for (const id of configured) {
+        const creds = configManager.getProviderCredentials(id);
+        const isCurrent = id === current;
+        console.log(`  ${isCurrent ? chalk.green("●") : "○"} ${id}: ${Object.keys(creds).join(", ")}`);
+      }
+    }
+    console.log();
+  });
+
+// ==================== 状态查询命令 ====================
+
+// 获取当前供应商实例的辅助函数
+function getCurrentProvider() {
+  const providerId = configManager.getCurrentProviderId();
+  if (!providerId) {
+    throw new Error("未配置供应商。请先运行 \"cps auth <provider> <token>\"");
+  }
+  const credentials = configManager.getProviderCredentials(providerId);
+  return createProvider(providerId, credentials);
+}
+
+// Status command (显示当前额度与用量)
+program
+  .command("status [provider]")
+  .description("显示额度与用量，可指定供应商")
   .option("-c, --compact", "紧凑模式显示")
   .option("-w, --watch", "实时监控模式")
-  .action(async (options) => {
-    const spinner = ora("获取使用状态中...").start();
+  .action(async (providerId, options) => {
+    const spinner = ora("获取额度与用量中...").start();
 
     try {
-      const [apiData, subscriptionData] = await Promise.all([
-        api.getUsageStatus(),
-        api.getSubscriptionDetails(),
-      ]);
-      const usageData = api.parseUsageData(apiData, subscriptionData);
-
-      // 获取账单数据用于消耗统计
-      let usageStats = null;
-      try {
-        // 按自然月统计当月消耗
-        const now = new Date();
-        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0).getTime();
-        const billingRecords = await api.getAllBillingRecords(100, monthStart);
-        if (billingRecords.length > 0) {
-          usageStats = api.calculateUsageStats(billingRecords, monthStart, now.getTime());
+      // 如果指定了供应商，使用指定的；否则使用当前供应商
+      let provider;
+      if (providerId) {
+        if (!hasProvider(providerId)) {
+          spinner.fail(chalk.red(`未知的供应商 "${providerId}"`));
+          console.log(chalk.gray(`运行 "cps providers" 查看支持的供应商`));
+          process.exit(1);
         }
-      } catch (billingError) {
-        // 账单数据获取失败不影响主要功能
-        console.error(chalk.gray(`消耗统计获取失败: ${billingError.message}`));
+        const configured = configManager.listConfiguredProviders();
+        if (!configured.includes(providerId)) {
+          spinner.fail(chalk.red(`供应商 "${providerId}" 尚未配置`));
+          console.log(chalk.gray(`运行 "cps auth ${providerId} <token>" 进行配置`));
+          process.exit(1);
+        }
+        const credentials = configManager.getProviderCredentials(providerId);
+        provider = createProvider(providerId, credentials);
+      } else {
+        provider = getCurrentProvider();
       }
 
-      const statusBar = new StatusBar(usageData, usageStats, api);
-      const allModels = api.parseAllModels(apiData);
+      const apiData = await provider.fetchUsageData();
+
+      // MiniMax 需要额外获取订阅信息
+      let usageData;
+      if (provider.constructor.id === 'minimax') {
+        const subscriptionData = await provider.getSubscriptionDetails();
+        usageData = provider.parseWithExpiry(apiData, subscriptionData);
+
+        // 获取消耗统计
+        try {
+          const usageStats = await provider.getUsageStats();
+          if (usageStats) {
+            usageData.usageStats = usageStats;
+          }
+        } catch (e) {
+          // 忽略统计获取失败
+        }
+      } else {
+        usageData = provider.parseUsageData(apiData);
+      }
+
+      const allModels = provider.parseAllModels ? provider.parseAllModels(apiData) : [];
 
       spinner.succeed("状态获取成功");
+
+      const statusBar = new StatusBar(usageData, usageData.usageStats || null, provider, allModels);
 
       if (options.compact) {
         console.log(statusBar.renderCompact());
       } else {
-        // 将 allModels 传入 StatusBar 内部渲染
-        const statusBarWithModels = new StatusBar(usageData, usageStats, api, allModels);
+        const statusBarWithModels = new StatusBar(usageData, usageData.usageStats || null, provider, allModels);
         console.log("\n" + statusBarWithModels.render() + "\n");
       }
 
       if (options.watch) {
         console.log(chalk.gray("监控中... 按 Ctrl+C 退出"));
-        startWatching(api, statusBar);
+        startWatching(provider, statusBar);
       }
     } catch (error) {
       spinner.fail(chalk.red("获取状态失败"));
@@ -154,20 +243,46 @@ program
     }
   });
 
-// List command (显示所有模型的使用状态)
+// List command (显示所有模型的额度与用量)
 program
-  .command("list")
-  .description("显示所有模型的使用状态")
-  .action(async () => {
-    const spinner = ora("获取使用状态中...").start();
+  .command("list [provider]")
+  .description("显示所有模型的额度与用量，可指定供应商")
+  .action(async (providerId) => {
+    const spinner = ora("获取额度与用量中...").start();
 
     try {
-      const [apiData, subscriptionData] = await Promise.all([
-        api.getUsageStatus(),
-        api.getSubscriptionDetails(),
-      ]);
-      const usageData = api.parseUsageData(apiData, subscriptionData);
-      const allModels = api.parseAllModels(apiData);
+      // 如果指定了供应商，使用指定的；否则使用当前供应商
+      let provider;
+      if (providerId) {
+        if (!hasProvider(providerId)) {
+          spinner.fail(chalk.red(`未知的供应商 "${providerId}"`));
+          console.log(chalk.gray(`运行 "cps providers" 查看支持的供应商`));
+          process.exit(1);
+        }
+        const configured = configManager.listConfiguredProviders();
+        if (!configured.includes(providerId)) {
+          spinner.fail(chalk.red(`供应商 "${providerId}" 尚未配置`));
+          console.log(chalk.gray(`运行 "cps auth ${providerId} <token>" 进行配置`));
+          process.exit(1);
+        }
+        const credentials = configManager.getProviderCredentials(providerId);
+        provider = createProvider(providerId, credentials);
+      } else {
+        provider = getCurrentProvider();
+      }
+
+      const apiData = await provider.fetchUsageData();
+
+      // MiniMax 需要额外获取订阅信息
+      let usageData;
+      if (provider.constructor.id === 'minimax') {
+        const subscriptionData = await provider.getSubscriptionDetails();
+        usageData = provider.parseWithExpiry(apiData, subscriptionData);
+      } else {
+        usageData = provider.parseUsageData(apiData);
+      }
+
+      const allModels = provider.parseAllModels ? provider.parseAllModels(apiData) : [];
 
       spinner.succeed("状态获取成功");
       const statusBarWithModels = new StatusBar(usageData, null, null, allModels);
@@ -196,7 +311,6 @@ program
   .action(async () => {
     let stdinData = null;
     if (!process.stdin.isTTY) {
-      // 使用 Promise.race 添加超时，避免 Claude Code 场景下挂起
       const readStdin = async () => {
         const chunks = [];
         for await (const chunk of process.stdin) {
@@ -226,13 +340,19 @@ program
     const cliCurrentDir = process.cwd().split(/[/\\]/).pop();
 
     try {
-      const [apiData, subscriptionData] = await Promise.all([
-        api.getUsageStatus(),
-        api.getSubscriptionDetails(),
-      ]);
-      const usageData = api.parseUsageData(apiData, subscriptionData);
+      const provider = getCurrentProvider();
+      const apiData = await provider.fetchUsageData();
 
-      const { usage, modelName, remaining, expiry } = usageData;
+      // MiniMax 需要额外获取订阅信息
+      let usageData;
+      if (provider.constructor.id === 'minimax') {
+        const subscriptionData = await provider.getSubscriptionDetails();
+        usageData = provider.parseWithExpiry(apiData, subscriptionData);
+      } else {
+        usageData = provider.parseUsageData(apiData);
+      }
+
+      const { shortTerm: usage, modelName, remaining, expiry } = usageData;
       const percentage = usage.percentage;
 
       let displayModel = modelName;
@@ -256,11 +376,6 @@ program
         modelId = modelName.toLowerCase().replace(/\s+/g, "-");
       }
 
-      if (modelId) {
-        // MiniMax 模型统一使用 208K context window
-        contextSize = 204800;
-      }
-
       let contextUsageTokens = null;
       if (stdinData && stdinData.transcript_path) {
         contextUsageTokens = await transcriptParser.findLatestUsage(stdinData.transcript_path);
@@ -269,11 +384,9 @@ program
       const displayDir = currentDir || cliCurrentDir || "";
 
       let configCounts = { claudeMdCount: 0, rulesCount: 0, mcpCount: 0, hooksCount: 0 };
-      // 优先使用 stdin 传入的 workspacePath，否则 fallback 到 process.cwd()
       const workspacePath = stdinData?.workspace?.current_directory || process.cwd();
       if (workspacePath) {
         try {
-          // 添加超时防止挂起
           configCounts = await Promise.race([
             configCounter.count(workspacePath),
             new Promise((_, reject) => setTimeout(() => reject(new Error('config timeout')), 2000))
@@ -284,7 +397,6 @@ program
       }
 
       // 获取 git 分支信息
-      // 优先使用 stdin 传入的 workspacePath，否则 fallback 到 process.cwd()
       const gitSearchPath = workspacePath || process.cwd();
       let gitBranch = null;
       if (gitSearchPath) {
@@ -296,7 +408,6 @@ program
           if (branch) {
             gitBranch = { name: branch };
 
-            // 获取 ahead/behind
             let hasUpstream = false;
             try {
               const revList = require('child_process').execSync(
@@ -311,11 +422,8 @@ program
                   gitBranch.behind = behind;
                 }
               }
-            } catch (e) {
-              // 无 upstream 或获取失败，静默跳过
-            }
+            } catch (e) {}
 
-            // 如果没有 upstream，尝试获取本地 commit 数作为提示
             if (!hasUpstream) {
               try {
                 const localCommits = require('child_process').execSync(
@@ -323,16 +431,12 @@ program
                   { cwd: gitSearchPath, encoding: 'utf8', timeout: 3000 }
                 ).trim();
                 const commitCount = parseInt(localCommits) || 0;
-                // 如果有本地 commits（大于1，因为初始commit算1个），标记有待推送
                 if (commitCount > 1) {
-                  gitBranch.ahead = -1; // -1 表示有未知数量的待推送
+                  gitBranch.ahead = -1;
                 }
-              } catch (e) {
-                // 获取失败，静默跳过
-              }
+              } catch (e) {}
             }
 
-            // 检查未提交的更改
             try {
               const status = require('child_process').execSync(
                 'git status --porcelain',
@@ -341,23 +445,17 @@ program
               if (status) {
                 gitBranch.hasChanges = true;
               }
-            } catch (e) {
-              // 获取失败，静默跳过
-            }
+            } catch (e) {}
           }
-        } catch (e) {
-          // 非 git 目录或获取失败，静默跳过
-        }
+        } catch (e) {}
       }
 
-      // 优先使用 Claude Code 提供的实时 tokens_used，如果没有则回退到 transcript 解析
       let contextUsageValue = 0;
       let contextSizeValue = contextSize;
 
       if (stdinData?.context_window) {
         const cw = stdinData.context_window;
         contextSizeValue = cw.context_window_size || contextSize;
-        // 关键点：优先取这里，这是最实时的
         contextUsageValue = cw.tokens_used || contextUsageTokens || 0;
       } else {
         contextUsageValue = contextUsageTokens || 0;
@@ -371,6 +469,7 @@ program
         remaining,
         expiry,
         weekly: usageData.weekly,
+        monthly: usageData.monthly,
         contextUsage: contextUsageValue,
         contextSize: contextSizeValue,
         configCounts,
@@ -389,11 +488,11 @@ program
 
       console.log(renderer.render(context));
     } catch (error) {
-      console.log(`❌ MiniMax 错误: ${error.message}`);
+      console.log(`❌ 错误: ${error.message}`);
     }
   });
 
-// Droid-statusline command - Droid 状态栏集成（从 session 文件读取数据）
+// Droid-statusline command - Droid 状态栏集成
 program
   .command("droid-statusline")
   .description("Droid状态栏集成（从 session 文件读取数据，单次输出）")
@@ -405,16 +504,15 @@ program
     // 查找 session 目录
     let targetSessionPath = sessionPath;
     const currentCwd = process.cwd().replace(/\\/g, "/");
-    
+
     if (!targetSessionPath) {
       const sessionsDir = path.join(process.env.HOME || process.env.USERPROFILE, ".factory", "sessions");
-      
+
       if (!fs.existsSync(sessionsDir)) {
         console.log("❌ 未找到 Droid sessions 目录");
         process.exit(1);
       }
 
-      // 优先查找与当前工作目录匹配的 session
       const userDirs = fs.readdirSync(sessionsDir);
       let matchedSession = null;
       let latestSession = null;
@@ -427,24 +525,22 @@ program
         const sessions = fs.readdirSync(userPath);
         for (const session of sessions) {
           if (!session.endsWith(".jsonl")) continue;
-          
+
           const jsonlPath = path.join(userPath, session);
           try {
             const content = fs.readFileSync(jsonlPath, "utf8");
             const firstLine = content.split("\n")[0];
             const entry = JSON.parse(firstLine);
-            
+
             if (entry.cwd) {
               const sessionCwd = entry.cwd.replace(/\\/g, "/");
-              // 优先匹配当前工作目录
               if (sessionCwd === currentCwd || currentCwd.includes(sessionCwd) || sessionCwd.includes(currentCwd)) {
                 if (!matchedSession) {
                   matchedSession = userPath;
                 }
               }
             }
-            
-            // 记录最新 session
+
             if (entry.timestamp) {
               const startTime = new Date(entry.timestamp).getTime();
               if (startTime > latestStartTime) {
@@ -452,13 +548,10 @@ program
                 latestSession = userPath;
               }
             }
-          } catch (e) {
-            // continue
-          }
+          } catch (e) {}
         }
       }
 
-      // 优先使用匹配的 session，否则用最新的
       targetSessionPath = matchedSession || latestSession;
 
       if (!targetSessionPath) {
@@ -470,7 +563,7 @@ program
     // 读取 settings.json
     const settingsFiles = fs.readdirSync(targetSessionPath).filter(f => f.endsWith(".settings.json"));
     let settings = {};
-    
+
     for (const sf of settingsFiles) {
       try {
         const content = fs.readFileSync(path.join(targetSessionPath, sf), "utf8");
@@ -479,22 +572,19 @@ program
           settings = parsed;
           break;
         }
-      } catch (e) {
-        // continue
-      }
+      } catch (e) {}
     }
 
-    // 读取 jsonl 获取 cwd 和模型信息，以及实时 token 使用量
+    // 读取 jsonl 获取 cwd 和模型信息
     let cwd = process.cwd();
     let jsonlTokens = null;
     const jsonlFiles = fs.readdirSync(targetSessionPath).filter(f => f.endsWith(".jsonl"));
-    
+
     for (const jf of jsonlFiles) {
       try {
         const content = fs.readFileSync(path.join(targetSessionPath, jf), "utf8");
         const lines = content.split('\n').filter(l => l.trim());
-        
-        // 获取第一行获取 cwd
+
         if (lines.length > 0) {
           try {
             const firstEntry = JSON.parse(lines[0]);
@@ -503,12 +593,10 @@ program
             }
           } catch (e) {}
         }
-        
-        // 从最后的消息中解析实时 token 使用量
+
         for (let i = lines.length - 1; i >= 0; i--) {
           try {
             const entry = JSON.parse(lines[i]);
-            // 查找 assistant 消息中的 usage
             if (entry.type === 'message' && entry.message?.role === 'assistant' && entry.message?.usage) {
               const u = entry.message.usage;
               jsonlTokens = {
@@ -524,52 +612,49 @@ program
             continue;
           }
         }
-      } catch (e) {
-        // continue
-      }
+      } catch (e) {}
     }
 
     const currentDir = cwd.split(/[/\\]/).pop();
 
-    // 优先使用 jsonl 中的实时 token 使用量，否则用 settings 中的累计值
-    const tokenUsage = (jsonlTokens && (jsonlTokens.inputTokens > 0 || jsonlTokens.outputTokens > 0)) 
-      ? jsonlTokens 
+    const tokenUsage = (jsonlTokens && (jsonlTokens.inputTokens > 0 || jsonlTokens.outputTokens > 0))
+      ? jsonlTokens
       : (settings.tokenUsage || {});
-    
+
     const inputTokens = tokenUsage.inputTokens || 0;
     const outputTokens = tokenUsage.outputTokens || 0;
     const cacheCreationTokens = tokenUsage.cacheCreationTokens || 0;
-    const cacheReadTokens = tokenUsage.cacheReadTokens || 0;
     const thinkingTokens = tokenUsage.thinkingTokens || 0;
-    
-    // 实时上下文使用量（不包括累计的 cacheReadTokens）
-    const contextTokens = inputTokens + outputTokens + cacheCreationTokens + thinkingTokens;
-    // 累计 token（用于显示）
-    const totalTokens = inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens + thinkingTokens;
 
-    // 获取模型信息
-    const modelName = settings.model || "MiniMax-M2.5-highspeed";
+    const contextTokens = inputTokens + outputTokens + cacheCreationTokens + thinkingTokens;
+
+    const modelName = settings.model || "Coding Plan";
     const modelDisplayName = modelName.replace(/^custom:/, "").replace(/-[0-9]+$/, "");
 
     // 获取 API 使用量
     let usageData = null;
     try {
-      const [apiData, subscriptionData] = await Promise.all([
-        api.getUsageStatus(),
-        api.getSubscriptionDetails(),
-      ]);
-      usageData = api.parseUsageData(apiData, subscriptionData);
+      const provider = getCurrentProvider();
+      const apiData = await provider.fetchUsageData();
+
+      if (provider.constructor.id === 'minimax') {
+        const subscriptionData = await provider.getSubscriptionDetails();
+        usageData = provider.parseWithExpiry(apiData, subscriptionData);
+      } else {
+        usageData = provider.parseUsageData(apiData);
+      }
     } catch (e) {
       usageData = {
-        usage: { percentage: 0, input: 0, output: 0, cached: 0, total: 0 },
+        shortTerm: { percentage: 0, used: 0, total: 0, remaining: 0 },
         weekly: null,
-        remaining: "未知",
-        expiry: "未知",
+        monthly: null,
+        remaining: { hours: 0, minutes: 0, text: "未知" },
+        expiry: null,
         modelName: modelDisplayName
       };
     }
 
-    const { usage, weekly, remaining, expiry } = usageData;
+    const { shortTerm: usage, weekly, monthly, remaining, expiry } = usageData;
 
     // 获取 git 分支
     let gitBranch = null;
@@ -580,8 +665,7 @@ program
       ).trim();
       if (branch) {
         gitBranch = { name: branch };
-        
-        // 检查未提交的更改
+
         try {
           const status = require('child_process').execSync(
             'git status --porcelain',
@@ -590,61 +674,19 @@ program
           if (status) {
             gitBranch.hasChanges = true;
           }
-        } catch (e) {
-          // ignore
-        }
-      }
-    } catch (e) {
-      // 非 git 目录
-    }
-
-    // 计算上下文使用量（从 session 实时 token）
-    // 使用实时 contextTokens 计算百分比
-    const contextUsageValue = contextTokens;
-    const contextSizeValue = 204800; // MiniMax M2 context window
-
-    // 获取 Droid 全局配置统计（不是当前工作目录）
-    const droidConfigDir = path.join(process.env.HOME || process.env.USERPROFILE, ".factory");
-    let configCounts = { claudeMdCount: 0, rulesCount: 0, mcpCount: 0, hooksCount: 0, skillsCount: 0 };
-    
-    try {
-      const agentsPath = path.join(droidConfigDir, "agents");
-      const rulesPath = path.join(droidConfigDir, "rules");
-      const skillsPath = path.join(droidConfigDir, "skills");
-      const hooksPath = path.join(droidConfigDir, "hooks");
-      const mcpPath = path.join(droidConfigDir, "mcp.json");
-
-      if (fs.existsSync(agentsPath)) {
-        configCounts.claudeMdCount = fs.readdirSync(agentsPath).filter(f => f.endsWith(".md")).length;
-      }
-      if (fs.existsSync(rulesPath)) {
-        configCounts.rulesCount = fs.readdirSync(rulesPath).filter(f => f.endsWith(".md")).length;
-      }
-      if (fs.existsSync(skillsPath)) {
-        configCounts.skillsCount = fs.readdirSync(skillsPath).filter(f => f.endsWith(".md")).length;
-      }
-      if (fs.existsSync(hooksPath)) {
-        configCounts.hooksCount = fs.readdirSync(hooksPath).filter(f => f.endsWith(".ps1") || f.endsWith(".sh")).length;
-      }
-      if (fs.existsSync(mcpPath)) {
-        try {
-          const mcpData = JSON.parse(fs.readFileSync(mcpPath, "utf8"));
-          if (mcpData.mcpServers) {
-            configCounts.mcpCount = Object.keys(mcpData.mcpServers).length;
-          }
         } catch (e) {}
       }
-    } catch (e) {
-      // ignore errors
-    }
+    } catch (e) {}
+
+    const contextUsageValue = contextTokens;
+    const contextSizeValue = 204800;
 
     const blocks = [];
 
-    // 高对比度徽章配色，纯 Powerline 渲染
     if (currentDir) {
-      blocks.push({ text: ` ${currentDir} `, bg: '#1D4ED8' }); // 皇家蓝
+      blocks.push({ text: ` ${currentDir} `, bg: '#1D4ED8' });
     }
-    
+
     const useNerdFonts = !process.env.MINIMAX_PLAIN_UI && !process.env.NO_NERD_FONTS;
     const arrow = useNerdFonts ? '\uE0B0' : '>';
     const branchIcon = useNerdFonts ? '\uE0A0' : '*';
@@ -655,15 +697,16 @@ program
       if (gitBranch.hasChanges) {
         branchStr += ' *';
       }
-      blocks.push({ text: ` ${branchIcon} ${branchStr} `, bg: '#7E22CE' }); // 紫色回归
+      blocks.push({ text: ` ${branchIcon} ${branchStr} `, bg: '#7E22CE' });
     }
-    
-    if (usage && usage.total > 0) {
-      let bg = '#065F46'; // 回归稳健的深翠绿 (Emerald 800)
-      if (usage.percentage >= 95) bg = '#991B1B'; // danger (Red 800)
-      else if (usage.percentage >= 75) bg = '#9A3412'; // warn (Orange 800)
 
-      let usageText = ` ${usage.percentage}%  (${usage.remaining}/${usage.total}) `;
+    if (usage && usage.total > 0) {
+      let bg = '#065F46';
+      if (usage.percentage >= 95) bg = '#991B1B';
+      else if (usage.percentage >= 75) bg = '#9A3412';
+
+      // 括号内展示已用/总额，和百分比（已用）保持一致
+      let usageText = ` ${usage.percentage}%  (${usage.used}/${usage.total}) `;
       if (weekly) {
         if (weekly.unlimited) {
           usageText += `· W ∞ `;
@@ -673,16 +716,16 @@ program
       }
       blocks.push({ text: usageText, bg: bg });
     }
-    
-    if (remaining) {
-      const remainingText = remaining.hours > 0 
-        ? `${remaining.hours}h${remaining.minutes}m` 
+
+    if (remaining && remaining.hours > 0) {
+      const remainingText = remaining.hours > 0
+        ? `${remaining.hours}h${remaining.minutes}m`
         : `${remaining.minutes}m`;
       blocks.push({ text: ` ${remainingText} `, bg: '#92400E' });
     }
-    
+
     if (expiry) {
-      let bg = '#374151'; // Gray 700
+      let bg = '#374151';
       if (expiry.daysRemaining <= 7) bg = '#9A3412';
       if (expiry.daysRemaining <= 3) bg = '#991B1B';
       blocks.push({ text: ` 剩${expiry.daysRemaining}天 `, bg: bg });
@@ -690,47 +733,48 @@ program
 
     let out = '';
     const leftArrow = useNerdFonts ? '\uE0B0' : '>';
-    
+
     for (let i = 0; i < blocks.length; i++) {
-        const b = blocks[i];
-        
-        // 磁贴开启：顺行式起点，利用黑色箭头实现内凹镂空感
-        if (i === 0) {
-            out += '\u001b[0m' + chalk.bgHex(b.bg).black(leftArrow);
-        }
-        
-        // 磁贴文字内容
-        out += '\u001b[0m' + chalk.bgHex(b.bg).bold.whiteBright(b.text);
-        
-        if (i < blocks.length - 1) {
-            const nextB = blocks[i + 1];
-            if (useNerdFonts) {
-                // 衔接尖部
-                out += '\u001b[0m' + chalk.bgHex(nextB.bg).hex(b.bg)(arrow);
-            } else {
-                out += '\u001b[0m' + chalk.bgHex(b.bg).bold.whiteBright(arrow);
-            }
+      const b = blocks[i];
+
+      if (i === 0) {
+        out += '\u001b[0m' + chalk.bgHex(b.bg).black(leftArrow);
+      }
+
+      out += '\u001b[0m' + chalk.bgHex(b.bg).bold.whiteBright(b.text);
+
+      if (i < blocks.length - 1) {
+        const nextB = blocks[i + 1];
+        if (useNerdFonts) {
+          out += '\u001b[0m' + chalk.bgHex(nextB.bg).hex(b.bg)(arrow);
         } else {
-            // 最后一块磁贴：顺行式终点
-            out += '\u001b[0m' + chalk.hex(b.bg)(arrow);
+          out += '\u001b[0m' + chalk.bgHex(b.bg).bold.whiteBright(arrow);
         }
+      } else {
+        out += '\u001b[0m' + chalk.hex(b.bg)(arrow);
+      }
     }
-    
+
     console.log(out);
   });
 
-// 模型上下文窗口大小（仅MiniMax模型）
-
-function startWatching(api, statusBar) {
+function startWatching(provider, statusBar) {
   let intervalId;
 
   const update = async () => {
     try {
-      const apiData = await api.getUsageStatus();
-      const usageData = api.parseUsageData(apiData);
+      const apiData = await provider.fetchUsageData();
+
+      let usageData;
+      if (provider.constructor.id === 'minimax') {
+        const subscriptionData = await provider.getSubscriptionDetails();
+        usageData = provider.parseWithExpiry(apiData, subscriptionData);
+      } else {
+        usageData = provider.parseUsageData(apiData);
+      }
+
       const newStatusBar = new StatusBar(usageData);
 
-      // 清除之前的输出
       process.stdout.write("\x1Bc");
 
       console.log("\n" + newStatusBar.render() + "\n");
@@ -740,13 +784,10 @@ function startWatching(api, statusBar) {
     }
   };
 
-  // 初始更新
   update();
 
-  // 每10秒更新一次，以近实时更新
   intervalId = setInterval(update, 10000);
 
-  // 处理Ctrl+C
   process.on("SIGINT", () => {
     clearInterval(intervalId);
     console.log(chalk.yellow("\n监控已停止"));

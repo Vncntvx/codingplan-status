@@ -243,7 +243,7 @@
 
 ### 首次发布
 
-- 基础功能：显示 MiniMax Coding Plan 使用状态
+- 基础功能：显示 MiniMax Coding Plan 额度与用量
 - 添加 WebView 设置界面
 - 实时显示当前周期使用进度
 - 显示当前周期剩余时间

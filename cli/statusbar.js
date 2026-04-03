@@ -2,7 +2,8 @@
 
 const chalk = require('chalk').default;
 const readline = require('readline');
-const MinimaxAPI = require('./api');
+const { getConfigManager } = require('./config-manager');
+const { createProvider } = require('./providers');
 
 class StatusBar {
   constructor(data) {
@@ -10,7 +11,8 @@ class StatusBar {
   }
 
   render() {
-    const { usage, remaining, modelName, weekly } = this.data;
+    const { shortTerm, remaining, modelName, weekly, providerName } = this.data;
+    const usage = shortTerm;
     const percentage = usage.percentage;
 
     // 基于已使用百分比：使用越多越危险
@@ -22,9 +24,13 @@ class StatusBar {
     }
 
     const statusIcon = percentage >= 85 ? '⚠' : percentage >= 60 ? '⚡' : '✓';
-    const remainingText = remaining.hours > 0
-      ? `${remaining.hours}h${remaining.minutes}m`
-      : `${remaining.minutes}m`;
+
+    let remainingText = '';
+    if (remaining && (remaining.hours > 0 || remaining.minutes > 0)) {
+      remainingText = remaining.hours > 0
+        ? `${remaining.hours}h${remaining.minutes}m`
+        : `${remaining.minutes}m`;
+    }
 
     let weeklyStr = '';
     if (weekly) {
@@ -42,25 +48,22 @@ class StatusBar {
 
 class TerminalStatusBar {
   constructor() {
-    this.api = new MinimaxAPI();
+    this.configManager = getConfigManager();
     this.currentLine = '';
     this.isActive = false;
   }
 
   async start() {
-    const configPath = require('path').join(
-      process.env.HOME || process.env.USERPROFILE,
-      '.minimax-config.json'
-    );
+    const providerId = this.configManager.getCurrentProviderId();
 
-    if (!require('fs').existsSync(configPath)) {
-      console.log(chalk.red('错误：未找到配置文件'));
-      console.log(chalk.yellow('请先运行: minimax-status auth <token>'));
+    if (!providerId) {
+      console.log(chalk.red('错误：未配置供应商'));
+      console.log(chalk.yellow('请先运行: cps auth <provider> <token>'));
       process.exit(1);
     }
 
     this.isActive = true;
-    console.log(chalk.green('✓ MiniMax 状态栏已启动'));
+    console.log(chalk.green(`✓ ${providerId} 状态栏已启动`));
     console.log(chalk.gray('按 Ctrl+C 退出\n'));
 
     // 隐藏光标
@@ -73,8 +76,20 @@ class TerminalStatusBar {
       if (!this.isActive) return;
 
       try {
-        const apiData = await this.api.getUsageStatus();
-        const usageData = this.api.parseUsageData(apiData);
+        const providerId = this.configManager.getCurrentProviderId();
+        const credentials = this.configManager.getProviderCredentials(providerId);
+        const provider = createProvider(providerId, credentials);
+
+        const apiData = await provider.fetchUsageData();
+
+        let usageData;
+        if (provider.constructor.id === 'minimax') {
+          const subscriptionData = await provider.getSubscriptionDetails();
+          usageData = provider.parseWithExpiry(apiData, subscriptionData);
+        } else {
+          usageData = provider.parseUsageData(apiData);
+        }
+
         const statusBar = new StatusBar(usageData);
         const newLine = statusBar.render();
 
