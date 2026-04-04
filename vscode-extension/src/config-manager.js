@@ -22,7 +22,7 @@ class ConfigManager {
       currentProvider: null,
       providers: {},
       settings: {
-        cacheTTL: 30000, // 默认缓存 TTL 30 秒
+        cacheTTL: 30000,
         debug: false,
       },
     };
@@ -33,7 +33,6 @@ class ConfigManager {
       if (fs.existsSync(this.configPath)) {
         const content = fs.readFileSync(this.configPath, 'utf8');
         this.config = JSON.parse(content);
-        // 确保设置存在
         if (!this.config.settings) {
           this.config.settings = this.getDefaultConfig().settings;
         }
@@ -51,7 +50,6 @@ class ConfigManager {
       const doSave = () => {
         this.writeLock = true;
         try {
-          // 写入时设置安全权限 0600（仅所有者可读写）
           fs.writeFileSync(
             this.configPath,
             JSON.stringify(this.config, null, 2),
@@ -67,7 +65,6 @@ class ConfigManager {
       };
 
       if (this.writeLock) {
-        // 简单的等待重试
         setTimeout(() => this.saveConfig().then(resolve).catch(reject), 10);
       } else {
         doSave();
@@ -75,7 +72,7 @@ class ConfigManager {
     });
   }
 
-  // 同步保存方法（向后兼容）
+  // 同步保存
   saveConfigSync() {
     try {
       fs.writeFileSync(
@@ -88,14 +85,13 @@ class ConfigManager {
     }
   }
 
-  // 验证凭据结构（仅检查必填字段）
+  // 验证凭据
   validateCredentials(providerId, credentials) {
     const requiredFields = REQUIRED_FIELDS[providerId];
     if (!requiredFields) {
       return { valid: false, error: `Unknown provider: ${providerId}` };
     }
 
-    // 检查必填字段
     for (const field of requiredFields) {
       if (!credentials[field]) {
         return { valid: false, error: `Missing required field: ${field}` };
@@ -106,7 +102,6 @@ class ConfigManager {
   }
 
   setProviderCredentials(providerId, credentials) {
-    // 验证凭据
     const validation = this.validateCredentials(providerId, credentials);
     if (!validation.valid) {
       throw new Error(validation.error);
@@ -116,7 +111,6 @@ class ConfigManager {
       this.config.providers[providerId] = {};
     }
 
-    // 合并凭据
     Object.assign(this.config.providers[providerId], credentials);
 
     if (!this.config.currentProvider) {
@@ -207,7 +201,7 @@ function getConfigManager() {
   return instance;
 }
 
-// 重置实例（用于测试）
+// 重置实例
 function resetInstance() {
   instance = null;
 }

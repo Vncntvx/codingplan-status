@@ -1,12 +1,14 @@
 {
   "name": "codingplan-status",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Coding Plan 额度与用量监控工具",
   "private": true,
   "bin": {
     "cps": "./cli/index.js",
     "cps-prompt": "./cli/prompts.js",
-    "cps-claudecode-statusline": "./cli/claudecode-statusline.js"
+    "cps-client": "./cli/client/index.js",
+    "cps-daemon": "./cli/statusline.js",
+    "cps-claudecode-statusline": "./cli/client/index.js"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"

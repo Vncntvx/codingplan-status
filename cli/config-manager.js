@@ -2,7 +2,6 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-// 凭据必填字段定义
 const REQUIRED_FIELDS = {
   minimax: ['token'],
   infini: ['token'],
@@ -11,6 +10,7 @@ const REQUIRED_FIELDS = {
 class ConfigManager {
   constructor() {
     this.configPath = path.join(os.homedir(), '.codingplan-config.json');
+    this.backupPath = path.join(os.homedir(), '.codingplan-config.json.bak');
     this.config = null;
     this.writeLock = false;
     this.loadConfig();
@@ -22,148 +22,145 @@ class ConfigManager {
       currentProvider: null,
       providers: {},
       settings: {
-        cacheTTL: 30000, // 默认缓存 TTL 30 秒
+        cacheTTL: 30000,
         debug: false,
+        idleTimeout: 3600000,
+        maxRetries: 3,
       },
     };
   }
 
   loadConfig() {
+    if (this._tryLoadConfig(this.configPath)) return;
+
+    this._logDebug('Main config corrupted, trying backup...');
+    if (this._tryLoadConfig(this.backupPath)) {
+      this._logDebug('Restored from backup');
+      this._atomicWriteSync(this.configPath, this.config);
+      return;
+    }
+
+    this._logDebug('Using default config');
+    this.config = this.getDefaultConfig();
+  }
+
+  _tryLoadConfig(filePath) {
     try {
-      if (fs.existsSync(this.configPath)) {
-        const content = fs.readFileSync(this.configPath, 'utf8');
-        this.config = JSON.parse(content);
-        // 确保设置存在
-        if (!this.config.settings) {
-          this.config.settings = this.getDefaultConfig().settings;
-        }
-      } else {
-        this.config = this.getDefaultConfig();
-      }
-    } catch (error) {
-      this._logDebug('Failed to load config:', error.message);
-      this.config = this.getDefaultConfig();
+      if (!fs.existsSync(filePath)) return false;
+      const content = fs.readFileSync(filePath, 'utf8');
+      const parsed = JSON.parse(content);
+      if (typeof parsed !== 'object' || parsed === null) return false;
+      this.config = parsed;
+      if (!this.config.settings) this.config.settings = this.getDefaultConfig().settings;
+      return true;
+    } catch {
+      return false;
     }
   }
 
   saveConfig() {
     return new Promise((resolve, reject) => {
-      const doSave = () => {
-        this.writeLock = true;
+      if (this.writeLock) {
+        setTimeout(() => this.saveConfig().then(resolve).catch(reject), 10);
+        return;
+      }
+
+      this.writeLock = true;
+
+      const doSave = (retryCount = 0) => {
         try {
-          // 写入时设置安全权限 0600（仅所有者可读写）
-          fs.writeFileSync(
-            this.configPath,
-            JSON.stringify(this.config, null, 2),
-            { mode: 0o600 }
-          );
+          this._atomicWrite(this.configPath, this.config, this.backupPath);
           resolve();
         } catch (error) {
-          this._logDebug('Failed to save config:', error.message);
-          reject(error);
-        } finally {
-          this.writeLock = false;
+          if (retryCount < 3) {
+            this._logDebug(`Save failed, retry ${retryCount + 1}/3:`, error.message);
+            setTimeout(() => doSave(retryCount + 1), 50);
+          } else {
+            this._logDebug('Save failed after 3 retries:', error.message);
+            reject(error);
+          }
         }
       };
 
-      if (this.writeLock) {
-        // 简单的等待重试
-        setTimeout(() => this.saveConfig().then(resolve).catch(reject), 10);
-      } else {
-        doSave();
-      }
+      doSave();
+      setTimeout(() => { this.writeLock = false; }, 100);
     });
   }
 
-  // 同步保存方法（向后兼容）
+  _atomicWrite(filePath, data, backupPath) {
+    const tempPath = filePath + '.tmp';
+    const content = JSON.stringify(data, null, 2);
+
+    if (fs.existsSync(filePath) && backupPath) {
+      try {
+        fs.copyFileSync(filePath, backupPath);
+        fs.chmodSync(backupPath, 0o600);
+      } catch {}
+    }
+
+    fs.writeFileSync(tempPath, content, { mode: 0o600 });
+    fs.renameSync(tempPath, filePath);
+  }
+
+  _atomicWriteSync(filePath, data) {
+    this._atomicWrite(filePath, data, null);
+  }
+
   saveConfigSync() {
     try {
-      fs.writeFileSync(
-        this.configPath,
-        JSON.stringify(this.config, null, 2),
-        { mode: 0o600 }
-      );
+      this._atomicWrite(this.configPath, this.config, this.backupPath);
     } catch (error) {
       this._logDebug('Failed to save config:', error.message);
     }
   }
 
-  // 验证凭据结构（仅检查必填字段）
   validateCredentials(providerId, credentials) {
     const requiredFields = REQUIRED_FIELDS[providerId];
-    if (!requiredFields) {
-      return { valid: false, error: `Unknown provider: ${providerId}` };
-    }
-
-    // 检查必填字段
+    if (!requiredFields) return { valid: false, error: `Unknown provider: ${providerId}` };
     for (const field of requiredFields) {
-      if (!credentials[field]) {
-        return { valid: false, error: `Missing required field: ${field}` };
-      }
+      if (!credentials[field]) return { valid: false, error: `Missing required field: ${field}` };
     }
-
     return { valid: true };
   }
 
   setProviderCredentials(providerId, credentials) {
-    // 验证凭据
     const validation = this.validateCredentials(providerId, credentials);
-    if (!validation.valid) {
-      throw new Error(validation.error);
-    }
+    if (!validation.valid) throw new Error(validation.error);
 
-    if (!this.config.providers[providerId]) {
-      this.config.providers[providerId] = {};
-    }
-
-    // 合并凭据
+    if (!this.config.providers[providerId]) this.config.providers[providerId] = {};
     Object.assign(this.config.providers[providerId], credentials);
 
-    if (!this.config.currentProvider) {
-      this.config.currentProvider = providerId;
-    }
-
+    if (!this.config.currentProvider) this.config.currentProvider = providerId;
     return this.saveConfig();
   }
 
-  // 获取设置项
   getSetting(key, defaultValue = null) {
     return this.config.settings?.[key] ?? defaultValue;
   }
 
-  // 更新设置项
   updateSetting(key, value) {
-    if (!this.config.settings) {
-      this.config.settings = {};
-    }
+    if (!this.config.settings) this.config.settings = {};
     this.config.settings[key] = value;
     return this.saveConfig();
   }
 
-  getCurrentProviderId() {
-    return this.config.currentProvider;
-  }
+  getCurrentProviderId() { return this.config.currentProvider; }
 
   getCurrentProviderConfig() {
     const providerId = this.config.currentProvider;
-    if (!providerId) return null;
-    return this.config.providers[providerId] || null;
+    return providerId ? this.config.providers[providerId] || null : null;
   }
 
   setCurrentProvider(providerId) {
-    if (!this.config.providers[providerId]) {
-      throw new Error(`Provider "${providerId}" not configured`);
-    }
+    if (!this.config.providers[providerId]) throw new Error(`Provider "${providerId}" not configured`);
     this.config.currentProvider = providerId;
     return this.saveConfig();
   }
 
-  getProviderCredentials(providerId) {
-    return this.config.providers[providerId] || null;
-  }
+  getProviderCredentials(providerId) { return this.config.providers[providerId] || null; }
 
   listConfiguredProviders() {
-    return Object.keys(this.config.providers).filter((id) => {
+    return Object.keys(this.config.providers).filter(id => {
       const creds = this.config.providers[id];
       return creds && Object.keys(creds).length > 0;
     });
@@ -172,19 +169,13 @@ class ConfigManager {
   removeProvider(providerId) {
     delete this.config.providers[providerId];
     if (this.config.currentProvider === providerId) {
-      const remaining = this.listConfiguredProviders();
-      this.config.currentProvider = remaining[0] || null;
+      this.config.currentProvider = this.listConfiguredProviders()[0] || null;
     }
     return this.saveConfig();
   }
 
-  hasAnyConfig() {
-    return this.config.currentProvider !== null;
-  }
-
-  getConfigPath() {
-    return this.configPath;
-  }
+  hasAnyConfig() { return this.config.currentProvider !== null; }
+  getConfigPath() { return this.configPath; }
 
   resetConfig() {
     this.config = this.getDefaultConfig();
@@ -192,7 +183,7 @@ class ConfigManager {
   }
 
   _logDebug(message, detail) {
-    if (process.env.CPS_DEBUG || this.config.settings?.debug) {
+    if (process.env.CPS_DEBUG || this.config?.settings?.debug) {
       console.error(`[ConfigManager] ${message}`, detail || '');
     }
   }
@@ -201,20 +192,10 @@ class ConfigManager {
 let instance = null;
 
 function getConfigManager() {
-  if (!instance) {
-    instance = new ConfigManager();
-  }
+  if (!instance) instance = new ConfigManager();
   return instance;
 }
 
-// 重置实例（用于测试）
-function resetInstance() {
-  instance = null;
-}
+function resetInstance() { instance = null; }
 
-module.exports = {
-  ConfigManager,
-  getConfigManager,
-  resetInstance,
-  REQUIRED_FIELDS,
-};
+module.exports = { ConfigManager, getConfigManager, resetInstance, REQUIRED_FIELDS };

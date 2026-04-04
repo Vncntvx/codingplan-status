@@ -3,7 +3,7 @@ const path = require('path');
 const os = require('os');
 
 // 默认 TTL 配置（毫秒）
-const DEFAULT_TTL = 30000; // 30 秒
+const DEFAULT_TTL = 30000;
 const MIN_TTL = 5000;
 const MAX_TTL = 60000;
 
@@ -39,7 +39,7 @@ class CacheManager {
             data,
             state,
             timestamp: Date.now()
-          }), { mode: 0o600 }); // 设置安全权限
+          }), { mode: 0o600 });
           resolve();
         } catch (error) {
           this._logDebug('Cache write error:', error.message);
@@ -62,7 +62,7 @@ class CacheManager {
     });
   }
 
-  // 同步写入方法（向后兼容）
+  // 同步写入
   writeSync(data, state = 'ok') {
     try {
       fs.writeFileSync(this.cachePath, JSON.stringify({
@@ -85,7 +85,7 @@ class CacheManager {
     return this.isValid(cache) ? cache : null;
   }
 
-  // 获取缓存状态（用于调试）
+  // 获取缓存状态
   getStatus() {
     const cache = this.read();
     return {
@@ -124,7 +124,7 @@ function getCacheManager(options) {
   return instance;
 }
 
-// 重置实例（用于测试）
+// 重置实例
 function resetInstance() {
   instance = null;
 }

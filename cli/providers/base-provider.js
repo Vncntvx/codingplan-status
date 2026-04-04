@@ -1,6 +1,5 @@
 /**
- * 供应商抽象基类
- * 所有供应商实现必须继承此类
+ * 供应商抽象基类，定义供应商接口规范
  */
 class BaseProvider {
   /**
@@ -33,7 +32,7 @@ class BaseProvider {
   }
 
   /**
-   * 验证配置是否完整
+   * 验证配置完整性
    * @returns {boolean}
    */
   validateConfig() {
@@ -97,7 +96,7 @@ class BaseProvider {
   }
 
   /**
-   * 通用的 API 错误处理
+   * 通用 API 错误处理
    * @param {Error} error
    */
   handleApiError(error) {

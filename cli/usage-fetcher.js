@@ -3,8 +3,7 @@ const { getConfigManager } = require('./config-manager');
 const { createProvider } = require('./providers');
 
 /**
- * 统一的用量数据获取服务
- * 封装缓存逻辑和 API 调用模式
+ * 用量数据获取服务，封装缓存逻辑和 API 调用
  */
 class UsageFetcher {
   constructor() {
@@ -63,15 +62,6 @@ class UsageFetcher {
       return usageData;
     } catch (error) {
       this._logDebug('API error:', error.message);
-
-      // 降级：尝试使用过期缓存
-      const staleCache = this.cacheManager.read();
-      if (staleCache && staleCache.data) {
-        this._logDebug('Using stale cache due to error');
-        this.cacheManager.writeSync(staleCache.data, 'stale');
-        return staleCache.data;
-      }
-
       this.cacheManager.writeSync(null, 'error');
       return null;
     }
@@ -107,7 +97,7 @@ function getUsageFetcher() {
   return instance;
 }
 
-// 重置实例（用于测试）
+// 重置实例
 function resetInstance() {
   instance = null;
 }

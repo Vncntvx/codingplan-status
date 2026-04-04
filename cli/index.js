@@ -152,7 +152,7 @@ program
   .command("config-set <key> <value>")
   .description("设置配置项")
   .action((key, value) => {
-    const validKeys = ['cacheTTL', 'debug'];
+    const validKeys = ['cacheTTL', 'debug', 'idleTimeout', 'maxRetries'];
     if (!validKeys.includes(key)) {
       console.log(chalk.red(`错误: 未知的配置项 "${key}"`));
       console.log(chalk.gray(`支持的配置项: ${validKeys.join(', ')}`));
@@ -164,6 +164,18 @@ program
       parsedValue = parseInt(value, 10);
       if (isNaN(parsedValue) || parsedValue < 5000 || parsedValue > 60000) {
         console.log(chalk.red("错误: cacheTTL 必须是 5000-60000 之间的整数（毫秒）"));
+        process.exit(1);
+      }
+    } else if (key === 'idleTimeout') {
+      parsedValue = parseInt(value, 10);
+      if (isNaN(parsedValue) || parsedValue < 0) {
+        console.log(chalk.red("错误: idleTimeout 必须是 >= 0 的整数（毫秒），0 表示禁用"));
+        process.exit(1);
+      }
+    } else if (key === 'maxRetries') {
+      parsedValue = parseInt(value, 10);
+      if (isNaN(parsedValue) || parsedValue < 0 || parsedValue > 10) {
+        console.log(chalk.red("错误: maxRetries 必须是 0-10 之间的整数"));
         process.exit(1);
       }
     } else if (key === 'debug') {
@@ -187,6 +199,8 @@ program
       console.log(chalk.bold("\n配置项:"));
       console.log(`  cacheTTL: ${settings.cacheTTL || 30000} ms`);
       console.log(`  debug: ${settings.debug || false}`);
+      console.log(`  idleTimeout: ${settings.idleTimeout || 3600000} ms (${settings.idleTimeout === 0 ? '禁用' : Math.floor((settings.idleTimeout || 3600000) / 60000) + ' 分钟'})`);
+      console.log(`  maxRetries: ${settings.maxRetries || 3}`);
       console.log();
     }
   });
@@ -320,141 +334,250 @@ program
     const path = require("path");
     const os = require("os");
 
+    const CPS_STATUS_COMMAND = "cps-client status";
+    const BACKUP_KEY = "_statusLineBackup";
+
+    const isCpsCommand = (command) => {
+      if (!command || typeof command !== "string") return false;
+      const trimmed = command.trim();
+      return trimmed === CPS_STATUS_COMMAND ||
+             trimmed === "cps-hud-wrapper" ||
+             trimmed === "cps-client combined";
+    };
+
+    const readJsonFile = (filePath, fallbackValue) => {
+      if (!fs.existsSync(filePath)) return fallbackValue;
+      try {
+        const raw = fs.readFileSync(filePath, "utf8");
+        const parsed = JSON.parse(raw);
+        if (typeof parsed !== "object" || parsed === null) {
+          return fallbackValue;
+        }
+        return parsed;
+      } catch {
+        return fallbackValue;
+      }
+    };
+
     if (target === "claude") {
       const claudeDir = path.join(os.homedir(), ".claude");
       const settingsPath = path.join(claudeDir, "settings.json");
-      const wrapperPath = path.join(claudeDir, "cps-wrapper.js");
-      const originalCmdPath = path.join(claudeDir, "cps-hud-cmd.json");
 
       if (options.remove) {
         if (!fs.existsSync(settingsPath)) {
           console.log(chalk.yellow("Claude Code 配置文件不存在，无需移除"));
           return;
         }
-        try {
-          let updated = false;
-          const settings = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
 
-          if (settings.statusLine && (
-              settings.statusLine.command === "cps-claudecode-statusline" ||
-              settings.statusLine.command.includes("cps-wrapper.js")
-          )) {
-            delete settings.statusLine;
-            updated = true;
+        const settings = readJsonFile(settingsPath, {});
+        const currentCmd = settings.statusLine?.command;
 
-            if (fs.existsSync(originalCmdPath)) {
-              try {
-                const originalCmd = JSON.parse(fs.readFileSync(originalCmdPath, "utf8")).command;
-                if (originalCmd) {
-                  settings.statusLine = { type: "command", command: originalCmd };
-                }
-              } catch(e) {}
-            }
-          }
-
-          if (settings.prompt && settings.prompt.command === "cps-prompt") {
-            delete settings.prompt;
-            updated = true;
-          }
-
-          if (updated) {
-            fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
-            console.log(chalk.green("✓ Claude Code 状态栏集成已移除"));
-            console.log(chalk.gray(`  配置文件: ${settingsPath}`));
+        if (isCpsCommand(currentCmd)) {
+          // 恢复备份的原始配置
+          if (settings[BACKUP_KEY]) {
+            settings.statusLine = settings[BACKUP_KEY];
+            delete settings[BACKUP_KEY];
+            console.log(chalk.green("✓ Claude Code 状态栏集成已移除，原配置已恢复"));
           } else {
-            console.log(chalk.yellow("未检测到 cps 状态栏配置，无需更改"));
+            delete settings.statusLine;
+            console.log(chalk.green("✓ Claude Code 状态栏集成已移除"));
           }
-        } catch (e) {
-          console.log(chalk.red(`读取配置文件失败: ${e.message}`));
+          fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), { mode: 0o600 });
+          console.log(chalk.gray(`  配置文件: ${settingsPath}`));
+        } else {
+          console.log(chalk.yellow("未检测到 CPS 状态栏配置，无需更改"));
         }
       } else {
         if (!fs.existsSync(claudeDir)) {
           fs.mkdirSync(claudeDir, { recursive: true });
         }
 
-        let settings = {};
-        if (fs.existsSync(settingsPath)) {
-          try {
-            settings = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
-          } catch (e) {
-            settings = {};
-          }
+        const settings = readJsonFile(settingsPath, {});
+        const currentCmd = settings.statusLine?.command;
+
+        // 备份原有的非 CPS statusLine 配置
+        if (settings.statusLine && !isCpsCommand(currentCmd)) {
+          settings[BACKUP_KEY] = settings.statusLine;
+          console.log(chalk.gray("已备份原有 statusLine 配置"));
         }
 
-        if (settings.prompt && settings.prompt.command === "cps-prompt") {
-          delete settings.prompt;
-        }
-
-        let currentCmd = settings.statusLine ? settings.statusLine.command : null;
-        let isAlreadyWrapped = currentCmd && currentCmd.includes('cps-wrapper.js');
-
-        if (currentCmd && !isAlreadyWrapped && currentCmd !== "cps-claudecode-statusline") {
-          fs.writeFileSync(originalCmdPath, JSON.stringify({ command: currentCmd }));
-        }
-
-        const wrapperContent = `#!/usr/bin/env node
-const fs = require('fs');
-const { execSync } = require('child_process');
-const path = require('path');
-const os = require('os');
-
-const DEBUG = process.env.CPS_DEBUG;
-
-let input = '';
-try {
-  input = fs.readFileSync(0, 'utf-8');
-} catch(e) {}
-
-// 运行原有 HUD（输出在上方）
-const originalCmdPath = path.join(os.homedir(), '.claude', 'cps-hud-cmd.json');
-if (fs.existsSync(originalCmdPath)) {
-  try {
-    const cmdData = JSON.parse(fs.readFileSync(originalCmdPath, 'utf8'));
-    if (cmdData.command) {
-      const hudOut = execSync(cmdData.command, {
-        input,
-        encoding: 'utf-8',
-        stdio: ['pipe', 'pipe', 'ignore'],
-        timeout: 5000
-      });
-      if (hudOut) {
-        process.stdout.write(hudOut);
-        if (!hudOut.endsWith('\\n')) process.stdout.write('\\n');
-      }
-    }
-  } catch(e) {
-    if (DEBUG) console.error('[cps-wrapper] HUD command failed:', e.message);
-  }
-}
-
-// 追加额度提示
-try {
-  const cpsOut = execSync('cps-claudecode-statusline', {
-    input,
-    encoding: 'utf-8',
-    stdio: ['pipe', 'pipe', 'ignore'],
-    timeout: 5000
-  });
-  if (cpsOut) process.stdout.write(cpsOut);
-} catch(e) {
-  if (DEBUG) console.error('[cps-wrapper] Status line failed:', e.message);
-}
-`;
-        fs.writeFileSync(wrapperPath, wrapperContent, { mode: 0o755 });
-
+        // 统一使用 cps-client status，守护进程会自动检测 HUD 并合并
         settings.statusLine = {
           type: "command",
-          command: `node "${wrapperPath}"`
+          command: CPS_STATUS_COMMAND,
         };
+        fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), { mode: 0o600 });
 
-        fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
         console.log(chalk.green("✓ Claude Code 状态栏集成已配置"));
+        console.log(chalk.gray("  守护进程将自动检测 HUD 并合并输出"));
         console.log(chalk.gray(`  配置文件: ${settingsPath}`));
         console.log(chalk.gray("  重启 Claude Code 后生效"));
+        console.log(chalk.gray("  使用 \"cps setup claude --remove\" 可恢复原配置"));
       }
     } else {
       console.log(chalk.red(`错误: 未知集成目标 "${target}"`));
       console.log(chalk.gray("支持: claude"));
+      process.exit(1);
+    }
+  });
+
+// 守护进程管理命令
+program
+  .command("daemon <action>")
+  .description("管理守护进程 (start|stop|status|restart)")
+  .action(async (action) => {
+    const fs = require("fs");
+    const path = require("path");
+    const os = require("os");
+    const net = require("net");
+    const { isDaemonRunning, getDaemonPid, PID_FILE, SOCKET_PATH } = require("./daemon-utils");
+
+    const DAEMON_SCRIPT = path.join(__dirname, "daemon", "index.js");
+
+    const sendCommand = (cmd) => {
+      return new Promise((resolve, reject) => {
+        const socket = net.createConnection(SOCKET_PATH);
+        const timer = setTimeout(() => {
+          socket.destroy();
+          reject(new Error("Connection timeout"));
+        }, 3000);
+
+        socket.on("connect", () => {
+          clearTimeout(timer);
+          socket.write(JSON.stringify({ command: cmd }) + "\n");
+
+          let buffer = "";
+          socket.on("data", (data) => {
+            buffer += data.toString();
+            if (buffer.includes("\n")) {
+              try {
+                resolve(JSON.parse(buffer.split("\n")[0]));
+              } catch {
+                reject(new Error("Invalid response"));
+              }
+            }
+          });
+        });
+
+        socket.on("error", reject);
+      });
+    };
+
+    const startDaemon = async () => {
+      if (isDaemonRunning()) {
+        const pid = getDaemonPid();
+        console.log(chalk.green(`守护进程已在运行 (PID: ${pid})`));
+        return;
+      }
+
+      // 清理残留文件
+      try {
+        if (fs.existsSync(PID_FILE)) fs.unlinkSync(PID_FILE);
+        if (fs.existsSync(SOCKET_PATH)) fs.unlinkSync(SOCKET_PATH);
+      } catch {}
+
+      // 启动守护进程
+      const { spawn } = require("child_process");
+      const daemon = spawn(process.execPath, [DAEMON_SCRIPT], {
+        detached: true,
+        stdio: "ignore",
+      });
+      daemon.unref();
+
+      // 等待启动
+      await new Promise((resolve, reject) => {
+        let attempts = 0;
+        const check = setInterval(() => {
+          attempts++;
+          if (isDaemonRunning()) {
+            clearInterval(check);
+            const newPid = getDaemonPid();
+            console.log(chalk.green(`守护进程已启动 (PID: ${newPid})`));
+            resolve();
+          } else if (attempts > 30) {
+            clearInterval(check);
+            reject(new Error("启动超时"));
+          }
+        }, 100);
+      });
+    };
+
+    const stopDaemon = async () => {
+      const pid = getDaemonPid();
+      if (!pid) {
+        console.log(chalk.yellow("守护进程未运行"));
+        return;
+      }
+
+      if (!isDaemonRunning()) {
+        console.log(chalk.yellow("守护进程已停止（清理 PID 文件）"));
+        try { fs.unlinkSync(PID_FILE); } catch {}
+        return;
+      }
+
+      try {
+        await sendCommand("stop");
+        console.log(chalk.green("守护进程已停止"));
+      } catch {
+        try {
+          process.kill(pid, "SIGTERM");
+          console.log(chalk.green("守护进程已强制停止"));
+        } catch {
+          console.log(chalk.red("守护进程停止失败"));
+        }
+      }
+
+      try { fs.unlinkSync(PID_FILE); } catch {}
+      try { fs.unlinkSync(SOCKET_PATH); } catch {}
+    };
+
+    const statusDaemon = async () => {
+      const pid = getDaemonPid();
+      if (!pid) {
+        console.log(chalk.yellow("守护进程未运行"));
+        return;
+      }
+
+      if (!isDaemonRunning()) {
+        console.log(chalk.yellow("守护进程未运行（PID 文件残留）"));
+        return;
+      }
+
+      try {
+        const response = await sendCommand("health");
+        console.log(chalk.green(`守护进程运行中 (PID: ${pid})`));
+        console.log(`运行时间: ${Math.floor(response.data.uptime)} 秒`);
+        console.log(`缓存状态: ${response.data.cache.hasData ? "有数据" : "无数据"}`);
+        if (response.data.cache.age) {
+          console.log(`数据年龄: ${Math.floor(response.data.cache.age / 1000)} 秒`);
+        }
+      } catch {
+        console.log(chalk.yellow("守护进程响应异常"));
+      }
+    };
+
+    try {
+      switch (action) {
+        case "start":
+          await startDaemon();
+          break;
+        case "stop":
+          await stopDaemon();
+          break;
+        case "status":
+          await statusDaemon();
+          break;
+        case "restart":
+          await stopDaemon();
+          await new Promise(r => setTimeout(r, 500));
+          await startDaemon();
+          break;
+        default:
+          console.log(chalk.red(`未知操作: ${action}`));
+          console.log(chalk.gray("支持: start, stop, status, restart"));
+      }
+    } catch (err) {
+      console.log(chalk.red(`操作失败: ${err.message}`));
       process.exit(1);
     }
   });

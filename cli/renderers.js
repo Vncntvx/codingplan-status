@@ -1,7 +1,7 @@
 const chalk = require('chalk').default;
 
 /**
- * 渲染紧凑格式的用量条
+ * 渲染紧凑格式用量条
  * @param {Object} data - usageData
  * @returns {string}
  */
@@ -41,7 +41,7 @@ function renderCompact(data) {
 }
 
 /**
- * 渲染极简格式
+ * 渲染极简格式用量标识
  * @param {Object} data - usageData
  * @returns {string}
  */

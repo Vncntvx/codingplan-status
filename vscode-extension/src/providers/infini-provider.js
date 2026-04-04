@@ -53,7 +53,7 @@ class InfiniProvider extends BaseProvider {
   }
 
   handleApiError(error) {
-    // Infini 特定的错误消息
+    // Infini 特定错误处理
     if (error.response) {
       const status = error.response.status;
       switch (status) {
@@ -73,7 +73,7 @@ class InfiniProvider extends BaseProvider {
       }
     }
 
-    // 调用父类处理通用错误
+    // 委托父类处理通用错误
     super.handleApiError(error);
   }
 
@@ -86,9 +86,9 @@ class InfiniProvider extends BaseProvider {
     return {
       providerId: 'infini',
       providerName: 'Infini AI',
-      modelName: 'Coding Plan', // Infini 不区分模型
+      modelName: 'Coding Plan',
       timeWindow: {
-        start: '', // Infini 不提供具体时间窗口
+        start: '',
         end: '',
         timezone: 'UTC+8',
       },
@@ -96,12 +96,12 @@ class InfiniProvider extends BaseProvider {
       weekly,
       monthly,
       remaining: {
-        hours: 0, // Infini 不提供剩余时间（滑动窗口）
+        hours: 0,
         minutes: 0,
         text: '滑动窗口 5 小时',
       },
-      expiry: null, // Infini 不提供到期信息
-      allModels: [], // Infini 不区分模型
+      expiry: null,
+      allModels: [],
     };
   }
 

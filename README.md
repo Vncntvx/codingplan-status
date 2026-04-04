@@ -16,11 +16,26 @@ Coding Plan 额度与用量监控工具，支持多供应商（无问芯穹(Infi
 - ✅ **多供应商支持**: 支持 Infini AI、MiniMax 等多个 Coding Plan 供应商
 - ✅ **实时状态监控**: 显示使用额度、剩余次数、重置时间
 - ✅ **多种显示模式**: 详细模式、紧凑模式、持续状态栏
-- ✅ **Claude Code 集成**: 可在 Claude Code 底部状态栏显示
 - ✅ **智能颜色编码**: 根据使用率自动切换颜色和图标
-- ✅ **简洁命令**: `cps status` 查看状态
+- ✅ **守护进程架构**: 缓存热加载、支持多个 Claude Code 窗口同时使用
+- ✅ **Claude Code 集成**: 可在 Claude Code 底部状态栏显示
 
 ## 安装
+
+### 前置要求
+
+- **Node.js** >= 18
+- **bun** — 必需，用于执行 HUD 插件合并输出
+
+安装 bun：
+
+```bash
+# macOS/Linux
+curl -fsSL https://bun.sh/install | bash
+
+# 或使用 Homebrew
+brew install bun
+```
 
 ### 方式一：从 Git 仓库安装（推荐）
 
@@ -149,6 +164,17 @@ cps config-get cacheTTL
 |------|------|
 | `cps setup claude` | 配置 Claude Code 状态栏集成 |
 | `cps setup claude --remove` | 移除 Claude Code 状态栏集成 |
+
+### 守护进程管理
+
+| 命令 | 描述 |
+|------|------|
+| `cps daemon start` | 启动守护进程 |
+| `cps daemon stop` | 停止守护进程 |
+| `cps daemon status` | 查看守护进程状态 |
+| `cps daemon restart` | 重启守护进程 |
+
+**注意**：守护进程会在首次使用时自动启动，通常无需手动管理。
 
 ## VS Code 扩展
 
@@ -352,7 +378,22 @@ cps auth infini <new_token>
 
 1. 运行 `cps setup claude` 重新配置
 2. 重启 Claude Code
-3. 手动测试: `cps-claudecode-statusline`
+3. 手动测试: `cps-client status`
+
+### 守护进程问题
+
+```bash
+# 查看守护进程状态
+cps daemon status
+
+# 重启守护进程
+cps daemon restart
+
+# 完全重置
+cps daemon stop
+rm ~/.cps-daemon.pid ~/.cps-daemon.sock
+cps daemon start
+```
 
 ### 调试模式
 
@@ -368,6 +409,7 @@ cps status
 ```
 
 调试模式会输出：
+
 - 缓存命中/未命中
 - API 请求详情
 - 错误详细信息
@@ -375,11 +417,15 @@ cps status
 ### 清除缓存
 
 ```bash
-# 删除缓存文件
-rm ~/.codingplan-cache.json
+# 重启守护进程（清除内存缓存）
+cps daemon restart
 
 # 或使用 --force 强制刷新
 cps status --force
+
+# 完全重置
+rm ~/.codingplan-cache.json
+cps daemon restart
 ```
 
 ## 卸载

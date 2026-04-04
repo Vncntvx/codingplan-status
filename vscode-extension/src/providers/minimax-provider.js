@@ -154,7 +154,7 @@ class MinimaxProvider extends BaseProvider {
   }
 
   handleApiError(error) {
-    // MiniMax 特定的错误消息
+    // MiniMax 特定错误处理
     if (error.response) {
       const status = error.response.status;
       switch (status) {
@@ -174,7 +174,7 @@ class MinimaxProvider extends BaseProvider {
       }
     }
 
-    // 调用父类处理通用错误
+    // 委托父类处理通用错误
     super.handleApiError(error);
   }
 
@@ -187,7 +187,6 @@ class MinimaxProvider extends BaseProvider {
     const startTime = new Date(modelData.start_time);
     const endTime = new Date(modelData.end_time);
 
-    // current_interval_usage_count 实际是剩余次数
     const remainingCount = modelData.current_interval_usage_count;
     const usedCount = modelData.current_interval_total_count - remainingCount;
     const usedPercentage = Math.round((usedCount / modelData.current_interval_total_count) * 100);

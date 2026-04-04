@@ -28,7 +28,6 @@ class MockAPI {
     const hours = Math.floor(remainingMs / (1000 * 60 * 60));
     const minutes = Math.floor((remainingMs % (1000 * 60 * 60)) / (1000 * 60));
 
-    // current_interval_usage_count 实际是剩余次数
     const remainingCount = modelData.current_interval_usage_count;
     const usedCount = modelData.current_interval_total_count - remainingCount;
     const usedPercentage = Math.round((usedCount / modelData.current_interval_total_count) * 100);
