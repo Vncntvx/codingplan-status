@@ -82,8 +82,12 @@ class ConfigManager {
         }
       };
 
-      doSave();
-      setTimeout(() => { this.writeLock = false; }, 100);
+      try {
+        doSave();
+      } finally {
+        // 确保锁始终被释放
+        this.writeLock = false;
+      }
     });
   }
 
@@ -91,11 +95,15 @@ class ConfigManager {
     const tempPath = filePath + '.tmp';
     const content = JSON.stringify(data, null, 2);
 
+    // 创建备份，失败时记录警告但不中断
     if (fs.existsSync(filePath) && backupPath) {
       try {
         fs.copyFileSync(filePath, backupPath);
         fs.chmodSync(backupPath, 0o600);
-      } catch {}
+      } catch (backupError) {
+        this._logDebug('Warning: Failed to create backup:', backupError.message);
+        // 继续写入，但记录警告
+      }
     }
 
     fs.writeFileSync(tempPath, content, { mode: 0o600 });

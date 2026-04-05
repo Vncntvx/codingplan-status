@@ -330,88 +330,50 @@ program
   .description("配置状态栏集成 (claude)")
   .option("-r, --remove", "移除状态栏集成")
   .action((target, options) => {
-    const fs = require("fs");
-    const path = require("path");
-    const os = require("os");
-
-    const CPS_STATUS_COMMAND = "cps-client status";
-    const BACKUP_KEY = "_statusLineBackup";
-
-    const isCpsCommand = (command) => {
-      if (!command || typeof command !== "string") return false;
-      const trimmed = command.trim();
-      return trimmed === CPS_STATUS_COMMAND ||
-             trimmed === "cps-hud-wrapper" ||
-             trimmed === "cps-client combined";
-    };
-
-    const readJsonFile = (filePath, fallbackValue) => {
-      if (!fs.existsSync(filePath)) return fallbackValue;
-      try {
-        const raw = fs.readFileSync(filePath, "utf8");
-        const parsed = JSON.parse(raw);
-        if (typeof parsed !== "object" || parsed === null) {
-          return fallbackValue;
-        }
-        return parsed;
-      } catch {
-        return fallbackValue;
-      }
-    };
+    const { getClaudeSettingsManager } = require("./claude-settings-manager");
 
     if (target === "claude") {
-      const claudeDir = path.join(os.homedir(), ".claude");
-      const settingsPath = path.join(claudeDir, "settings.json");
+      const manager = getClaudeSettingsManager();
+      const CPS_STATUS_COMMAND = "cps-client status";
 
       if (options.remove) {
-        if (!fs.existsSync(settingsPath)) {
-          console.log(chalk.yellow("Claude Code 配置文件不存在，无需移除"));
+        const result = manager.removeStatusLine();
+
+        if (!result.success) {
+          console.log(chalk.red(`错误: ${result.error}`));
+          console.log(chalk.yellow("提示: 可尝试从备份恢复:"));
+          console.log(chalk.gray(`  备份文件: ${manager.getBackupPath()}`));
+          process.exit(1);
+        }
+
+        if (!result.wasModified) {
+          console.log(chalk.yellow(result.message));
           return;
         }
 
-        const settings = readJsonFile(settingsPath, {});
-        const currentCmd = settings.statusLine?.command;
-
-        if (isCpsCommand(currentCmd)) {
-          // 恢复备份的原始配置
-          if (settings[BACKUP_KEY]) {
-            settings.statusLine = settings[BACKUP_KEY];
-            delete settings[BACKUP_KEY];
-            console.log(chalk.green("✓ Claude Code 状态栏集成已移除，原配置已恢复"));
-          } else {
-            delete settings.statusLine;
-            console.log(chalk.green("✓ Claude Code 状态栏集成已移除"));
-          }
-          fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), { mode: 0o600 });
-          console.log(chalk.gray(`  配置文件: ${settingsPath}`));
+        if (result.restoredOriginal) {
+          console.log(chalk.green("✓ Claude Code 状态栏集成已移除，原配置已恢复"));
         } else {
-          console.log(chalk.yellow("未检测到 CPS 状态栏配置，无需更改"));
+          console.log(chalk.green("✓ Claude Code 状态栏集成已移除"));
         }
+        console.log(chalk.gray(`  配置文件: ${manager.getSettingsPath()}`));
+
       } else {
-        if (!fs.existsSync(claudeDir)) {
-          fs.mkdirSync(claudeDir, { recursive: true });
+        const result = manager.configureStatusLine(CPS_STATUS_COMMAND);
+
+        if (!result.success) {
+          console.log(chalk.red(`错误: ${result.error}`));
+          console.log(chalk.yellow("提示: 可尝试从备份恢复:"));
+          console.log(chalk.gray(`  备份文件: ${manager.getBackupPath()}`));
+          process.exit(1);
         }
 
-        const settings = readJsonFile(settingsPath, {});
-        const currentCmd = settings.statusLine?.command;
-
-        // 备份原有的非 CPS statusLine 配置
-        if (settings.statusLine && !isCpsCommand(currentCmd)) {
-          settings[BACKUP_KEY] = settings.statusLine;
-          console.log(chalk.gray("已备份原有 statusLine 配置"));
+        if (!result.wasModified) {
+          console.log(chalk.green("✓ 状态栏集成已配置，无需更改"));
+        } else {
+          console.log(chalk.green("✓ Claude Code 状态栏集成已配置"));
         }
-
-        // 统一使用 cps-client status，守护进程会自动检测 HUD 并合并
-        settings.statusLine = {
-          type: "command",
-          command: CPS_STATUS_COMMAND,
-        };
-        fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), { mode: 0o600 });
-
-        console.log(chalk.green("✓ Claude Code 状态栏集成已配置"));
-        console.log(chalk.gray("  守护进程将自动检测 HUD 并合并输出"));
-        console.log(chalk.gray(`  配置文件: ${settingsPath}`));
-        console.log(chalk.gray("  重启 Claude Code 后生效"));
+        console.log(chalk.gray(`  配置文件: ${manager.getSettingsPath()}`));
         console.log(chalk.gray("  使用 \"cps setup claude --remove\" 可恢复原配置"));
       }
     } else {
