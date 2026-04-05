@@ -12,9 +12,12 @@ const { createResponse, createErrorResponse } = require('./protocol');
 class Daemon {
   constructor() {
     this.configManager = getConfigManager();
-    this.cache = new MemoryCache();
+    this.cache = new MemoryCache({
+      ttl: this.configManager.getSetting('cacheTTL', 30000),
+    });
     this.server = null;
     this.refreshTimer = null;
+    this.refreshIntervalMs = null;
     this.isShuttingDown = false;
     this.lastRequestTime = Date.now();
     this.idleCheckInterval = null;
@@ -107,31 +110,63 @@ class Daemon {
     }
 
     fs.writeFileSync(this.pidFile, process.pid.toString(), { mode: 0o600 });
+    try {
+      this.syncCacheTTL();
+      console.log('预热缓存...');
+      await this.fetchData();
 
-    console.log('预热缓存...');
-    await this.fetchData();
+      this.startBackgroundRefresh();
+      this.startIdleCheck();
+      await this.startServer();
+      this.setupGracefulShutdown();
 
-    this.startBackgroundRefresh();
-    this.startIdleCheck();
-    await this.startServer();
-    this.setupGracefulShutdown();
-
-    console.log(`守护进程已启动 (PID: ${process.pid})`);
-    console.log(`Socket: ${this.socketPath}`);
-    return true;
+      console.log(`守护进程已启动 (PID: ${process.pid})`);
+      console.log(`Socket: ${this.socketPath}`);
+      return true;
+    } catch (err) {
+      if (this.refreshTimer) {
+        clearInterval(this.refreshTimer);
+        this.refreshTimer = null;
+      }
+      if (this.idleCheckInterval) {
+        clearInterval(this.idleCheckInterval);
+        this.idleCheckInterval = null;
+      }
+      try {
+        if (fs.existsSync(this.pidFile)) {
+          fs.unlinkSync(this.pidFile);
+        }
+      } catch {}
+      throw err;
+    }
   }
 
   async startServer() {
     return new Promise((resolve, reject) => {
       this.server = net.createServer((socket) => this.handleConnection(socket));
+      let recoveringAddrInUse = false;
 
       this.server.on('error', (err) => {
-        if (err.code === 'EADDRINUSE') {
-          this.cleanupSocket();
-          this.server.listen(this.socketPath);
-        } else {
+        if (err.code !== 'EADDRINUSE') {
           reject(err);
+          return;
         }
+
+        if (recoveringAddrInUse) {
+          reject(err);
+          return;
+        }
+
+        recoveringAddrInUse = true;
+        this.tryRecoverSocketInUse()
+          .then((recovered) => {
+            if (!recovered) {
+              reject(new Error('Socket path is in use by an active daemon'));
+              return;
+            }
+            this.server.listen(this.socketPath);
+          })
+          .catch(reject);
       });
 
       this.server.listen(this.socketPath, () => {
@@ -164,16 +199,16 @@ class Daemon {
 
       let response;
 
-        switch (request.command) {
-          case 'status':
-            response = await this.handleStatus(request.params);
-            break;
-          case 'status-json':
-            response = await this.handleStatusJson(request.params);
-            break;
-          case 'combined':
-            response = await this.handleCombined(request.params);
-            break;
+      switch (request.command) {
+        case 'status':
+          response = await this.handleStatus(request.params);
+          break;
+        case 'status-json':
+          response = await this.handleStatusJson(request.params);
+          break;
+        case 'combined':
+          response = await this.handleCombined(request.params);
+          break;
         case 'hud':
           response = await this.handleHud(request.params);
           break;
@@ -202,6 +237,7 @@ class Daemon {
 
   async handleStatus(params = {}) {
     const { forceRefresh = false, format = 'compact' } = params;
+    this.syncCacheTTL();
 
     // 获取 CPS 数据
     const cachedData = forceRefresh ? null : this.getCurrentProviderCache();
@@ -237,6 +273,7 @@ class Daemon {
 
   async handleStatusJson(params = {}) {
     const { forceRefresh = false } = params;
+    this.syncCacheTTL();
 
     const cachedData = forceRefresh ? null : this.getCurrentProviderCache();
     let data = cachedData;
@@ -283,6 +320,7 @@ class Daemon {
     const runFetch = async (attempt) => {
       try {
         this.configManager.loadConfig();
+        this.syncCacheTTL();
 
         const providerId = this.configManager.getCurrentProviderId();
         if (!providerId) return null;
@@ -339,9 +377,26 @@ class Daemon {
   }
 
   startBackgroundRefresh() {
-    const interval = this.configManager.getSetting('cacheTTL', 30000) / 2;
+    if (this.refreshTimer) {
+      clearInterval(this.refreshTimer);
+      this.refreshTimer = null;
+    }
+
+    this.syncCacheTTL();
+    const interval = Math.max(1000, Math.floor(this.cache.ttl / 2));
+    this.refreshIntervalMs = interval;
+
     this.refreshTimer = setInterval(async () => {
       if (this.isShuttingDown) return;
+
+      this.configManager.loadConfig();
+      const ttlChanged = this.syncCacheTTL();
+      const expectedInterval = Math.max(1000, Math.floor(this.cache.ttl / 2));
+      if (ttlChanged || this.refreshIntervalMs !== expectedInterval) {
+        this.startBackgroundRefresh();
+        return;
+      }
+
       const cached = this.cache.data;
       const currentProviderId = this.getCurrentProviderId();
       const providerChanged = cached?.providerId && currentProviderId && cached.providerId !== currentProviderId;
@@ -465,6 +520,47 @@ class Daemon {
       isExpired: currentProviderCache ? rawStatus.isExpired : true,
       hasMismatchedProviderData: Boolean(rawStatus.hasData && !currentProviderCache),
     };
+  }
+
+  syncCacheTTL() {
+    const ttlSetting = this.configManager.getSetting('cacheTTL', 30000);
+    const ttl = Number(ttlSetting);
+    if (!Number.isFinite(ttl)) return false;
+    const normalized = Math.max(5000, Math.min(60000, Math.floor(ttl)));
+    if (this.cache.ttl === normalized) return false;
+    this.cache.setTTL(normalized);
+    return true;
+  }
+
+  async tryRecoverSocketInUse() {
+    const activeSocket = await this.isSocketReachable(500);
+    if (activeSocket) {
+      return false;
+    }
+
+    this.cleanupSocket();
+    return true;
+  }
+
+  isSocketReachable(timeoutMs = 500) {
+    return new Promise((resolve) => {
+      const socket = net.createConnection(this.socketPath);
+      const timer = setTimeout(() => {
+        socket.destroy();
+        resolve(false);
+      }, timeoutMs);
+
+      socket.on('connect', () => {
+        clearTimeout(timer);
+        socket.destroy();
+        resolve(true);
+      });
+
+      socket.on('error', () => {
+        clearTimeout(timer);
+        resolve(false);
+      });
+    });
   }
 }
 

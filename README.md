@@ -22,6 +22,8 @@ Coding Plan 额度与用量监控工具，支持多供应商（无问芯穹(Infi
 
 ## 安装
 
+> **注意**: 如使用 claude code 集成，强烈建议备份当前配置文件 `~/.claude/setting.json`，以防止意外覆盖。
+
 ### 前置要求
 
 - **Node.js** >= 18

@@ -4,16 +4,65 @@ const net = require('net');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { isDaemonRunning, isSocketReady, PID_FILE, SOCKET_PATH } = require('../daemon-utils');
+const { isSocketReady, SOCKET_PATH } = require('../daemon-utils');
 
 const LOCK_FILE = path.join(os.homedir(), '.cps-daemon.lock');
 const DAEMON_SCRIPT = path.join(__dirname, '..', 'daemon', 'index.js');
 const CONNECT_TIMEOUT = 3000;
 const REQUEST_TIMEOUT = 5000;
+const CHECK_INTERVAL = 100;
+const DAEMON_READY_TIMEOUT = 45000;
+const LOCK_STALE_TIMEOUT = 60000;
+const STDIN_IDLE_TIMEOUT = 50;
+const STDIN_TOTAL_TIMEOUT = 1500;
+const STDIN_MAX_BYTES = 1024 * 1024;
 
 process.env.FORCE_COLOR = '1';
 
-function readStdin(timeoutMs = 50) {
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function removeLockFile() {
+  try {
+    if (fs.existsSync(LOCK_FILE)) {
+      fs.unlinkSync(LOCK_FILE);
+    }
+  } catch {}
+}
+
+function isLockStale() {
+  try {
+    if (!fs.existsSync(LOCK_FILE)) return false;
+    const stat = fs.statSync(LOCK_FILE);
+    return Date.now() - stat.mtimeMs > LOCK_STALE_TIMEOUT;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForDaemonReady(timeoutMs = DAEMON_READY_TIMEOUT) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (await isSocketReady(300)) {
+      return true;
+    }
+    await delay(CHECK_INTERVAL);
+  }
+  return false;
+}
+
+async function waitForLockReleaseOrReady(timeoutMs = DAEMON_READY_TIMEOUT) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (await isSocketReady(300)) return 'ready';
+    if (!fs.existsSync(LOCK_FILE)) return 'lock_released';
+    await delay(CHECK_INTERVAL);
+  }
+  return 'timeout';
+}
+
+function readStdin(timeoutMs = STDIN_IDLE_TIMEOUT) {
   if (!process.stdin || process.stdin.isTTY || process.stdin.readableEnded) {
     return Promise.resolve('');
   }
@@ -21,11 +70,15 @@ function readStdin(timeoutMs = 50) {
   return new Promise((resolve) => {
     let settled = false;
     let input = '';
+    let totalBytes = 0;
+    let idleTimer = null;
+    const totalTimer = setTimeout(() => finish(), STDIN_TOTAL_TIMEOUT);
 
     const finish = () => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
+      clearTimeout(idleTimer);
+      clearTimeout(totalTimer);
       process.stdin.off('data', onData);
       process.stdin.off('end', onEnd);
       process.stdin.off('error', onError);
@@ -33,13 +86,25 @@ function readStdin(timeoutMs = 50) {
       resolve(input);
     };
 
+    const resetIdleTimer = () => {
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(finish, timeoutMs);
+    };
+
     const onData = (chunk) => {
-      input += chunk.toString();
+      const text = chunk.toString();
+      input += text;
+      totalBytes += Buffer.byteLength(text, 'utf8');
+      if (totalBytes >= STDIN_MAX_BYTES) {
+        finish();
+        return;
+      }
+      resetIdleTimer();
     };
     const onEnd = () => finish();
     const onError = () => finish();
 
-    const timer = setTimeout(finish, timeoutMs);
+    resetIdleTimer();
     process.stdin.setEncoding('utf8');
     process.stdin.on('data', onData);
     process.stdin.on('end', onEnd);
@@ -133,79 +198,62 @@ function sendRequest(socket, request) {
 
 
 function startDaemon() {
-  return new Promise((resolve, reject) => {
-    // 检查是否有其他进程正在启动守护进程
-    if (fs.existsSync(LOCK_FILE)) {
-      let waitAttempts = 0;
-      const waitInterval = setInterval(() => {
-        waitAttempts++;
-        if (isDaemonRunning()) {
-          clearInterval(waitInterval);
-          resolve();
-        } else if (waitAttempts >= 50) {
-          clearInterval(waitInterval);
-          try { fs.unlinkSync(LOCK_FILE); } catch {}
-          doSpawn(resolve, reject);
-        }
-      }, 100);
+  return doSpawn(0);
+}
+
+async function doSpawn(attempt) {
+  let lockAcquired = false;
+
+  try {
+    fs.writeFileSync(LOCK_FILE, process.pid.toString(), { flag: 'wx' });
+    lockAcquired = true;
+  } catch {
+    const waitState = await waitForLockReleaseOrReady();
+    if (waitState === 'ready') return;
+    if (waitState === 'lock_released') {
+      if (attempt === 0) {
+        return doSpawn(attempt + 1);
+      }
+      throw new Error('Daemon failed to start');
+    }
+    if (waitState === 'timeout' && attempt === 0 && isLockStale()) {
+      removeLockFile();
+      return doSpawn(attempt + 1);
+    }
+    throw new Error('Daemon failed to start (lock contention)');
+  }
+
+  try {
+    if (await isSocketReady(300)) {
       return;
     }
 
-    doSpawn(resolve, reject);
-  });
-}
+    const { spawn } = require('child_process');
+    const daemon = spawn(process.execPath, [DAEMON_SCRIPT], {
+      detached: true,
+      stdio: 'ignore',
+      env: { ...process.env, CPS_DAEMON: '1' },
+    });
 
-function doSpawn(resolve, reject) {
-  // 创建锁文件
-  try {
-    fs.writeFileSync(LOCK_FILE, process.pid.toString(), { flag: 'wx' });
-  } catch {
-    let waitAttempts = 0;
-    const waitInterval = setInterval(() => {
-      waitAttempts++;
-      if (isDaemonRunning()) {
-        clearInterval(waitInterval);
-        resolve();
-      } else if (waitAttempts >= 50) {
-        clearInterval(waitInterval);
-        reject(new Error('Daemon failed to start (lock contention)'));
-      }
-    }, 100);
-    return;
-  }
-
-  if (isDaemonRunning()) {
-    try { fs.unlinkSync(LOCK_FILE); } catch {}
-    resolve();
-    return;
-  }
-
-  const { spawn } = require('child_process');
-  const daemon = spawn(process.execPath, [DAEMON_SCRIPT], {
-    detached: true,
-    stdio: 'ignore',
-    env: { ...process.env, CPS_DAEMON: '1' },
-  });
-
-  daemon.on('error', (err) => {
-    try { fs.unlinkSync(LOCK_FILE); } catch {}
-    reject(err);
-  });
-  daemon.unref();
-
-  let attempts = 0;
-  const checkReady = setInterval(() => {
-    attempts++;
-    if (isDaemonRunning()) {
-      clearInterval(checkReady);
-      try { fs.unlinkSync(LOCK_FILE); } catch {}
+    await new Promise((resolve, reject) => {
+      daemon.on('error', reject);
+      daemon.unref();
       resolve();
-    } else if (attempts >= 30) {
-      clearInterval(checkReady);
-      try { fs.unlinkSync(LOCK_FILE); } catch {}
-      reject(new Error('Daemon failed to start'));
+    });
+
+    const ready = await waitForDaemonReady();
+    if (!ready) {
+      if (attempt === 0 && isLockStale()) {
+        removeLockFile();
+        return doSpawn(attempt + 1);
+      }
+      throw new Error('Daemon failed to start');
     }
-  }, 100);
+  } finally {
+    if (lockAcquired) {
+      removeLockFile();
+    }
+  }
 }
 
 async function main() {
@@ -220,7 +268,10 @@ async function main() {
   };
 
   try {
-    if (!isDaemonRunning()) await startDaemon();
+    const daemonReady = await isSocketReady(300);
+    if (!daemonReady) {
+      await startDaemon();
+    }
 
     const socket = await connect();
     const response = await sendRequest(socket, request);

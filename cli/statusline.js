@@ -6,39 +6,10 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const net = require('net');
 const { isDaemonRunning, getDaemonPid, PID_FILE, SOCKET_PATH } = require('./daemon-utils');
+const { sendDaemonCommand } = require('./daemon-command-client');
 
 const DAEMON_SCRIPT = path.join(__dirname, 'daemon', 'index.js');
-
-async function sendCommand(command) {
-  return new Promise((resolve, reject) => {
-    const socket = net.createConnection(SOCKET_PATH);
-    const timer = setTimeout(() => {
-      socket.destroy();
-      reject(new Error('Connection timeout'));
-    }, 3000);
-
-    socket.on('connect', () => {
-      clearTimeout(timer);
-      socket.write(JSON.stringify({ command }) + '\n');
-
-      let buffer = '';
-      socket.on('data', (data) => {
-        buffer += data.toString();
-        if (buffer.includes('\n')) {
-          try {
-            resolve(JSON.parse(buffer.split('\n')[0]));
-          } catch {
-            reject(new Error('Invalid response'));
-          }
-        }
-      });
-    });
-
-    socket.on('error', reject);
-  });
-}
 
 async function start() {
   if (isDaemonRunning()) {
@@ -95,7 +66,7 @@ async function stop() {
   }
 
   try {
-    await sendCommand('stop');
+    await sendDaemonCommand('stop');
     console.log('守护进程已停止');
   } catch {
     // 强制终止
@@ -126,7 +97,7 @@ async function status() {
   }
 
   try {
-    const response = await sendCommand('health');
+    const response = await sendDaemonCommand('health');
     console.log(`守护进程运行中 (PID: ${pid})`);
     console.log(`运行时间: ${Math.floor(response.data.uptime)} 秒`);
     console.log(`缓存状态: ${response.data.cache.hasData ? '有数据' : '无数据'}`);
