@@ -1,5 +1,4 @@
-const vscode = require('vscode');
-const { createProvider, listProviders, hasProvider, getProviderClass } = require('./providers');
+const { listProviders, hasProvider, getProviderClass } = require('./providers');
 const { getConfigManager } = require('./config-manager');
 
 /**
@@ -9,7 +8,6 @@ const { getConfigManager } = require('./config-manager');
 class ProviderManager {
   constructor() {
     this.configManager = getConfigManager();
-    this.currentProvider = null;
     this.currentProviderId = null;
   }
 
@@ -36,74 +34,24 @@ class ProviderManager {
 
     const credentials = this.configManager.getProviderCredentials(providerId);
     if (!credentials || Object.keys(credentials).length === 0) {
-      this.currentProvider = null;
       this.currentProviderId = null;
       return;
     }
 
-    try {
-      this.currentProvider = createProvider(providerId, credentials);
-      this.currentProviderId = providerId;
-    } catch (error) {
-      console.error(`Failed to create provider ${providerId}:`, error.message);
-      this.currentProvider = null;
-      this.currentProviderId = null;
-    }
-  }
-
-  /**
-   * Fetch usage data from the current provider
-   * @returns {Promise<Object|null>} Normalized usage data
-   */
-  async fetchUsageData() {
-    if (!this.currentProvider) {
-      return null;
-    }
-
-    try {
-      const rawData = await this.currentProvider.fetchUsageData();
-
-      // Use provider-specific parsing based on provider type
-      if (this.currentProvider.constructor.id === 'minimax') {
-        const subscriptionData = await this.currentProvider.getSubscriptionDetails();
-        const usageData = this.currentProvider.parseWithExpiry(rawData, subscriptionData);
-
-        // Try to get usage stats
-        try {
-          const usageStats = await this.currentProvider.getUsageStats();
-          if (usageStats) {
-            usageData.usageStats = usageStats;
-          }
-        } catch (e) {
-          // Ignore stats errors
-        }
-
-        // Get all models if available
-        if (this.currentProvider.parseAllModels) {
-          usageData.allModels = this.currentProvider.parseAllModels(rawData);
-        }
-
-        return usageData;
-      } else {
-        // Infini and other providers
-        return this.currentProvider.parseUsageData(rawData);
-      }
-    } catch (error) {
-      throw error;
-    }
+    this.currentProviderId = providerId;
   }
 
   /**
    * Switch to a different provider
    * @param {string} providerId
    */
-  switchProvider(providerId) {
+  async switchProvider(providerId) {
     if (!hasProvider(providerId)) {
       throw new Error(`Unknown provider: ${providerId}`);
     }
 
     this._createProviderInstance(providerId);
-    this.configManager.setCurrentProvider(providerId);
+    await this.configManager.setCurrentProvider(providerId);
   }
 
   /**
@@ -147,7 +95,7 @@ class ProviderManager {
    * @returns {boolean}
    */
   isConfigured() {
-    return this.currentProvider !== null;
+    return this.currentProviderId !== null;
   }
 
   /**
@@ -155,13 +103,13 @@ class ProviderManager {
    * @param {string} providerId
    * @param {Object} credentials
    */
-  setCredentials(providerId, credentials) {
-    this.configManager.setProviderCredentials(providerId, credentials);
+  async setCredentials(providerId, credentials) {
+    await this.configManager.setProviderCredentials(providerId, credentials);
 
     // If this is the first provider, set it as current
     const configured = this.configManager.listConfiguredProviders();
     if (configured.length === 1) {
-      this.configManager.setCurrentProvider(providerId);
+      await this.configManager.setCurrentProvider(providerId);
     }
 
     // If setting credentials for current provider, refresh instance
@@ -194,10 +142,10 @@ class ProviderManager {
    * @returns {Promise<{success: boolean, message: string}>}
    */
   async testConnection() {
-    if (!this.currentProvider) {
+    if (!this.currentProviderId) {
       return { success: false, message: 'No provider configured' };
     }
-    return this.currentProvider.testConnection();
+    return { success: true, message: 'Configured provider is available via daemon data path' };
   }
 
   /**

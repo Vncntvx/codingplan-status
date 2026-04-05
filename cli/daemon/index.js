@@ -20,6 +20,8 @@ class Daemon {
     this.idleCheckInterval = null;
     this.pidFile = path.join(os.homedir(), '.cps-daemon.pid');
     this.socketPath = this.getSocketPath();
+    this.inflightFetchPromise = null;
+    this.inflightFetchProviderId = null;
   }
 
   getSocketPath() {
@@ -162,13 +164,16 @@ class Daemon {
 
       let response;
 
-      switch (request.command) {
-        case 'status':
-          response = await this.handleStatus(request.params);
-          break;
-        case 'combined':
-          response = await this.handleCombined(request.params);
-          break;
+        switch (request.command) {
+          case 'status':
+            response = await this.handleStatus(request.params);
+            break;
+          case 'status-json':
+            response = await this.handleStatusJson(request.params);
+            break;
+          case 'combined':
+            response = await this.handleCombined(request.params);
+            break;
         case 'hud':
           response = await this.handleHud(request.params);
           break;
@@ -199,7 +204,8 @@ class Daemon {
     const { forceRefresh = false, format = 'compact' } = params;
 
     // 获取 CPS 数据
-    let data = forceRefresh ? null : this.cache.get();
+    const cachedData = forceRefresh ? null : this.getCurrentProviderCache();
+    let data = cachedData;
     if (!data) {
       data = await this.fetchData();
     }
@@ -224,8 +230,28 @@ class Daemon {
     // HUD 未启用或无 stdin 数据，只返回 CPS
     return createResponse('ok', {
       output: this.renderOutput(data, format),
-      cached: !forceRefresh && this.cache.get(),
-      age: Date.now() - this.cache.timestamp,
+      cached: Boolean(!forceRefresh && cachedData),
+      age: cachedData ? Date.now() - this.cache.timestamp : 0,
+    });
+  }
+
+  async handleStatusJson(params = {}) {
+    const { forceRefresh = false } = params;
+
+    const cachedData = forceRefresh ? null : this.getCurrentProviderCache();
+    let data = cachedData;
+    if (!data) {
+      data = await this.fetchData();
+    }
+
+    if (!data) {
+      return createErrorResponse('Failed to fetch data', 'FETCH_FAILED');
+    }
+
+    return createResponse('ok', {
+      usage: data,
+      cache: this.getCurrentProviderCacheStatus(),
+      source: forceRefresh ? 'force-refresh' : (cachedData ? 'cache' : 'upstream'),
     });
   }
 
@@ -235,7 +261,7 @@ class Daemon {
 
   async handleHud(params = {}) {
     // 此方法保留给外部 HUD 调用（守护进程内合并时不会走到这里）
-    let data = this.cache.get();
+    let data = this.getCurrentProviderCache();
     if (!data) {
       data = await this.fetchData();
     }
@@ -244,39 +270,66 @@ class Daemon {
   }
 
   async fetchData(retryCount = 0) {
-    try {
-      this.configManager.loadConfig();
-
-      const providerId = this.configManager.getCurrentProviderId();
-      if (!providerId) return null;
-
-      const credentials = this.configManager.getProviderCredentials(providerId);
-      if (!credentials) return null;
-
-      const provider = createProvider(providerId, credentials);
-      const apiData = await provider.fetchUsageData();
-
-      let usageData;
-      if (provider.constructor.id === 'minimax') {
-        const subscriptionData = await provider.getSubscriptionDetails();
-        usageData = provider.parseWithExpiry(apiData, subscriptionData);
-      } else {
-        usageData = provider.parseUsageData(apiData);
-      }
-
-      this.cache.set(usageData);
-      return usageData;
-    } catch (err) {
-      const maxRetries = this.configManager.getSetting('maxRetries', 3);
-      if (retryCount < maxRetries && this.isNetworkError(err)) {
-        const delay = 1000 * Math.pow(2, retryCount);
-        this.log(`Retry ${retryCount + 1}/${maxRetries} in ${delay}ms`);
-        await new Promise(r => setTimeout(r, delay));
-        return this.fetchData(retryCount + 1);
-      }
-      this.log('Fetch error:', err.message);
-      return null;
+    const currentProviderId = this.getCurrentProviderId();
+    if (
+      retryCount === 0 &&
+      this.inflightFetchPromise &&
+      this.inflightFetchProviderId &&
+      this.inflightFetchProviderId === currentProviderId
+    ) {
+      return this.inflightFetchPromise;
     }
+
+    const runFetch = async (attempt) => {
+      try {
+        this.configManager.loadConfig();
+
+        const providerId = this.configManager.getCurrentProviderId();
+        if (!providerId) return null;
+
+        const credentials = this.configManager.getProviderCredentials(providerId);
+        if (!credentials) return null;
+
+        const provider = createProvider(providerId, credentials);
+        const apiData = await provider.fetchUsageData();
+
+        let usageData;
+        if (provider.constructor.id === 'minimax') {
+          const subscriptionData = await provider.getSubscriptionDetails();
+          usageData = provider.parseWithExpiry(apiData, subscriptionData);
+        } else {
+          usageData = provider.parseUsageData(apiData);
+        }
+
+        this.cache.set(usageData);
+        return usageData;
+      } catch (err) {
+        const maxRetries = this.configManager.getSetting('maxRetries', 3);
+        if (attempt < maxRetries && this.isNetworkError(err)) {
+          const delay = 1000 * Math.pow(2, attempt);
+          this.log(`Retry ${attempt + 1}/${maxRetries} in ${delay}ms`);
+          await new Promise(r => setTimeout(r, delay));
+          return runFetch(attempt + 1);
+        }
+        this.log('Fetch error:', err.message);
+        return null;
+      }
+    };
+
+    if (retryCount === 0) {
+      const inflightPromise = runFetch(retryCount);
+      this.inflightFetchPromise = inflightPromise;
+      this.inflightFetchProviderId = currentProviderId;
+      inflightPromise.finally(() => {
+        if (this.inflightFetchPromise === inflightPromise) {
+          this.inflightFetchPromise = null;
+          this.inflightFetchProviderId = null;
+        }
+      });
+      return inflightPromise;
+    }
+
+    return runFetch(retryCount);
   }
 
   isNetworkError(err) {
@@ -289,7 +342,11 @@ class Daemon {
     const interval = this.configManager.getSetting('cacheTTL', 30000) / 2;
     this.refreshTimer = setInterval(async () => {
       if (this.isShuttingDown) return;
-      const shouldRefresh = !this.cache.data ||
+      const cached = this.cache.data;
+      const currentProviderId = this.getCurrentProviderId();
+      const providerChanged = cached?.providerId && currentProviderId && cached.providerId !== currentProviderId;
+      const shouldRefresh = !cached ||
+        providerChanged ||
         Date.now() - this.cache.timestamp > this.cache.ttl * 0.8;
       if (shouldRefresh) {
         this.log('Background refresh');
@@ -376,6 +433,38 @@ class Daemon {
     if (process.env.CPS_DEBUG || this.configManager.getSetting('debug')) {
       console.error('[Daemon]', ...args);
     }
+  }
+
+  getCurrentProviderId() {
+    try {
+      this.configManager.loadConfig();
+      return this.configManager.getCurrentProviderId();
+    } catch {
+      return null;
+    }
+  }
+
+  getCurrentProviderCache() {
+    const cached = this.cache.get();
+    if (!cached) return null;
+    const currentProviderId = this.getCurrentProviderId();
+    if (!currentProviderId) return null;
+    if (cached.providerId !== currentProviderId) return null;
+    return cached;
+  }
+
+  getCurrentProviderCacheStatus() {
+    const rawStatus = this.cache.getStatus();
+    const currentProviderCache = this.getCurrentProviderCache();
+    return {
+      hasData: Boolean(currentProviderCache),
+      state: rawStatus.state,
+      timestamp: currentProviderCache ? rawStatus.timestamp : 0,
+      age: currentProviderCache ? rawStatus.age : null,
+      ttl: rawStatus.ttl,
+      isExpired: currentProviderCache ? rawStatus.isExpired : true,
+      hasMismatchedProviderData: Boolean(rawStatus.hasData && !currentProviderCache),
+    };
   }
 }
 

@@ -51,7 +51,7 @@ class BaseProvider {
    * @param {boolean} forceRefresh - 强制刷新缓存（已弃用，缓存由 UsageFetcher 统一管理）
    * @returns {Promise<Object>} 供应商原始响应
    */
-  async fetchUsageData(forceRefresh = false) {
+  async fetchUsageData() {
     throw new Error('Must implement fetchUsageData');
   }
 
@@ -60,7 +60,7 @@ class BaseProvider {
    * @param {Object} rawData - 供应商原始响应
    * @returns {NormalizedUsageData} 统一格式数据
    */
-  parseUsageData(rawData) {
+  parseUsageData() {
     throw new Error('Must implement parseUsageData');
   }
 

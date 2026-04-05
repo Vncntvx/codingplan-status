@@ -7,26 +7,14 @@ test/**
 .eslintrc.json
 .npmrc
 .vsce ignore
-node_modules/.bin/
-node_modules/**/test/**
-node_modules/**/tests/**
-node_modules/**/docs/**
-node_modules/**/doc/**
-node_modules/**/example/**
-node_modules/**/examples/**
-node_modules/**/.github/**
-node_modules/**/.vscode/**
-node_modules/**/.idea/**
-node_modules/**/coverage/
-node_modules/**/test/
-node_modules/**/tests/
-node_modules/**/docs/
-node_modules/**/doc/
-node_modules/**/example/
-node_modules/**/examples/
-node_modules/**/*.md
-node_modules/**/README*
-node_modules/**/CHANGELOG*
-node_modules/**/HISTORY*
-node_modules/**/LICENSE*
-node_modules/**/CONTRIBUTING*
+
+# Source files (bundled into dist/)
+src/**
+extension.js
+
+# Lock files
+bun.lock
+package-lock.json
+
+# Dependencies (bundled into dist/extension.js)
+node_modules/**

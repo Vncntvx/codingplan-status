@@ -31,7 +31,7 @@ class MinimaxProvider extends BaseProvider {
     this.baseUrl = 'https://www.minimaxi.com/v1/api/openplatform';
   }
 
-  async fetchUsageData(forceRefresh = false) {
+  async fetchUsageData() {
     if (!this.config.token) {
       throw new Error('Missing token. Please run "cps auth minimax <token>" first');
     }

@@ -11,10 +11,9 @@
   "categories": [
     "Other"
   ],
-  "main": "./extension.js",
+  "main": "./dist/extension.js",
   "activationEvents": [
-    "onStartupFinished",
-    "onView:codingplanStatusView"
+    "onStartupFinished"
   ],
   "contributes": {
     "commands": [
@@ -35,6 +34,24 @@
         "title": "CodingPlan Status: 切换供应商",
         "category": "CodingPlan",
         "description": "切换当前使用的供应商"
+      },
+      {
+        "command": "codingplanStatus.showInfo",
+        "title": "CodingPlan Status: 显示详情",
+        "category": "CodingPlan",
+        "description": "显示当前额度与用量详情"
+      },
+      {
+        "command": "codingplanStatus.showHelp",
+        "title": "CodingPlan Status: 打开帮助",
+        "category": "CodingPlan",
+        "description": "查看使用教程"
+      },
+      {
+        "command": "codingplanStatus.showLogs",
+        "title": "CodingPlan Status: 查看日志",
+        "category": "CodingPlan",
+        "description": "打开扩展日志输出"
       }
     ],
     "viewsContainers": {
@@ -57,38 +74,39 @@
     "configuration": {
       "title": "CodingPlan Status",
       "properties": {
-        "codingplanStatus.refreshInterval": {
-          "type": "number",
-          "default": 30,
-          "description": "刷新间隔（秒）",
-          "order": 1
-        },
         "codingplanStatus.showTooltip": {
           "type": "boolean",
           "default": true,
           "description": "显示详细提示信息",
-          "order": 2
+          "order": 1
         },
         "codingplanStatus.language": {
           "type": "string",
-          "enum": ["zh-CN", "en-US"],
+          "enum": [
+            "zh-CN",
+            "en-US"
+          ],
           "default": "zh-CN",
           "description": "Language / 语言",
-          "order": 3
+          "order": 2
         }
       }
     }
   },
   "scripts": {
+    "build": "esbuild ./extension.js --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --minify",
+    "watch": "esbuild ./extension.js --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --watch",
     "lint": "eslint .",
     "pretest": "npm run lint",
     "test": "node ./test/runTest.js",
-    "package": "vsce package",
+    "package": "npm run build && vsce package",
     "install-test": "npm install"
   },
   "devDependencies": {
     "@types/vscode": "^1.74.0",
+    "esbuild": "^0.25.2",
     "eslint": "^8.56.0",
+    "mocha": "^10.8.2",
     "@vscode/vsce": "^2.21.0"
   },
   "dependencies": {

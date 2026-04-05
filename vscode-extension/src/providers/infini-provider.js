@@ -29,7 +29,7 @@ class InfiniProvider extends BaseProvider {
     this.baseUrl = 'https://cloud.infini-ai.com/maas/coding';
   }
 
-  async fetchUsageData(forceRefresh = false) {
+  async fetchUsageData() {
     if (!this.config.token) {
       throw new Error('Missing API key. Please run "cps auth infini <api-key>" first');
     }

@@ -65,6 +65,7 @@ function parseRequest(raw) {
  */
 const COMMANDS = {
   STATUS: 'status',
+  STATUS_JSON: 'status-json',
   COMBINED: 'combined',
   HUD: 'hud',
   HEALTH: 'health',

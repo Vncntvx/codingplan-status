@@ -33,14 +33,24 @@
 
 ### 1. 安装扩展
 
-**方式一**：VS Code 扩展商店搜索 "CodingPlan Status"
-
-**方式二**：手动安装 `.vsix` 文件
 ```bash
 cd vscode-extension
-npm install
-npx vsce package
+
+# 安装依赖
+bun install
+
+# 编译并打包
+bun run package
+
 # 在 VS Code 中安装生成的 .vsix 文件
+# code --install-extension codingplan-status-vscode-1.0.0.vsix
+```
+
+**开发模式**：
+
+```bash
+# 监听文件变化自动重新编译
+bun run watch
 ```
 
 ### 2. 配置认证
@@ -52,10 +62,12 @@ npx vsce package
 ### 3. 获取认证信息
 
 **Infini AI:**
+
 1. 访问 [Infini Coding Plan 页面](https://cloud.infini-ai.com/genstudio/code)
 2. 登录并获取 API Key (以 `sk-cp-` 开头)
 
 **MiniMax:**
+
 1. 访问 [MiniMax 开放平台](https://platform.minimaxi.com/user-center/payment/coding-plan)
 2. 套餐管理 → Token-Plan 中创建或获取 API Key
 
@@ -110,6 +122,7 @@ Reset: 1 小时 20 分钟后重置
 本扩展与 CLI 工具共享配置文件 `~/.codingplan-config.json`。
 
 安装 CLI 工具：
+
 ```bash
 bun add -g github:Vncntvx/codingplan-status
 # 或
@@ -125,6 +138,7 @@ npm install -g github:Vncntvx/codingplan-status
 **Q: 状态栏不显示？**
 
 请检查：
+
 - 是否已正确配置 API Key
 - 扩展是否已激活（重启 VS Code）
 - 网络连接是否正常

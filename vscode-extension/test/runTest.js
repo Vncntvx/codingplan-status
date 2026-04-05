@@ -1,6 +1,6 @@
 const path = require('path');
 const Mocha = require('mocha');
-const { glob } = require('glob');
+const glob = require('glob');
 
 async function main() {
     // Create the mocha test
@@ -12,7 +12,7 @@ async function main() {
     const testsRoot = path.resolve(__dirname, 'suite');
 
     // Add files to the test suite
-    const specs = await glob('**/**.test.js', { cwd: testsRoot });
+    const specs = glob.sync('**/**.test.js', { cwd: testsRoot });
     specs.forEach(spec => mocha.addFile(path.resolve(testsRoot, spec)));
 
     // Run the mocha test

@@ -22,8 +22,8 @@ class ConfigAdapter {
    * Set the current provider in shared config
    * @param {string} providerId
    */
-  setCurrentProvider(providerId) {
-    this.configManager.setCurrentProvider(providerId);
+  async setCurrentProvider(providerId) {
+    await this.configManager.setCurrentProvider(providerId);
   }
 
   /**
@@ -40,8 +40,8 @@ class ConfigAdapter {
    * @param {string} providerId
    * @param {Object} credentials
    */
-  setProviderCredentials(providerId, credentials) {
-    this.configManager.setProviderCredentials(providerId, credentials);
+  async setProviderCredentials(providerId, credentials) {
+    await this.configManager.setProviderCredentials(providerId, credentials);
   }
 
   /**
@@ -55,24 +55,14 @@ class ConfigAdapter {
   /**
    * Get extension-specific settings from VSCode settings
    * These are UI preferences that don't need to be shared with CLI
-   * @returns {{refreshInterval: number, language: string, showTooltip: boolean}}
+   * @returns {{language: string, showTooltip: boolean}}
    */
   getExtensionSettings() {
     const config = vscode.workspace.getConfiguration('codingplanStatus');
     return {
-      refreshInterval: config.get('refreshInterval', 30),
       language: config.get('language', 'zh-CN'),
       showTooltip: config.get('showTooltip', true),
     };
-  }
-
-  /**
-   * Get refresh interval in seconds
-   * @returns {number}
-   */
-  getRefreshInterval() {
-    const config = vscode.workspace.getConfiguration('codingplanStatus');
-    return config.get('refreshInterval', 30);
   }
 
   /**
@@ -156,8 +146,8 @@ class ConfigAdapter {
       credentials.groupId = oldGroupId;
     }
 
-    this.setProviderCredentials('minimax', credentials);
-    this.setCurrentProvider('minimax');
+    await this.setProviderCredentials('minimax', credentials);
+    await this.setCurrentProvider('minimax');
 
     // Clear old settings (optional - could keep for backward compatibility)
     try {

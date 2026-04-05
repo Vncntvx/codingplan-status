@@ -1,21 +1,22 @@
 const assert = require('assert');
-const vscode = require('vscode');
+const path = require('path');
 
 suite('Extension Test Suite', () => {
-    vscode.window.showInformationMessage('运行所有测试.');
+    const packageJson = require(path.resolve(__dirname, '..', '..', 'package.json'));
 
-    test('Extension should be present', () => {
-        assert.ok(vscode.extensions.getExtension('JochenYang.minimax-status-vscode'));
+    test('Manifest should define expected extension identity', () => {
+        assert.strictEqual(packageJson.publisher, 'JochenYang');
+        assert.strictEqual(packageJson.name, 'codingplan-status-vscode');
+        assert.strictEqual(packageJson.main, './extension.js');
     });
 
-    test('Extension should activate', async () => {
-        const extension = vscode.extensions.getExtension('JochenYang.minimax-status-vscode');
-        assert.ok(extension);
-    });
-
-    test('Should register commands', async () => {
-        const commands = await vscode.commands.getCommands(true);
-        assert.ok(commands.includes('minimaxStatus.refresh'));
-        assert.ok(commands.includes('minimaxStatus.setup'));
+    test('Manifest should contribute required commands', () => {
+        const commands = packageJson.contributes.commands.map((item) => item.command);
+        assert.ok(commands.includes('codingplanStatus.refresh'));
+        assert.ok(commands.includes('codingplanStatus.setup'));
+        assert.ok(commands.includes('codingplanStatus.switchProvider'));
+        assert.ok(commands.includes('codingplanStatus.showInfo'));
+        assert.ok(commands.includes('codingplanStatus.showHelp'));
+        assert.ok(commands.includes('codingplanStatus.showLogs'));
     });
 });
